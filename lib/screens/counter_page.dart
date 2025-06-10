@@ -31,20 +31,31 @@ class _CounterPageState extends State<CounterPage> {
   }
 
   Future<void> _incrementCounter() async {
-    setState(() {
-      _counter++;
-    });
-
+    setState(() => _counter++);
     final success = await _apiService.updateCounter(Counter(count: _counter));
-    if (!success) {
-      debugPrint("Fehler beim Senden");
-    }
+    if (!success) debugPrint("Fehler beim Senden");
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Bier-Zähler')),
+      appBar: AppBar(
+        title: const Text('Bier-Zähler'),
+        leading: IconButton(
+          icon: const Icon(Icons.group),
+          onPressed: () {
+            Navigator.pushNamed(context, '/groups');
+          },
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () {
+              Navigator.pushNamed(context, '/settings');
+            },
+          ),
+        ],
+      ),
       body: Center(
         child: _isLoading
             ? const CircularProgressIndicator()
@@ -53,11 +64,10 @@ class _CounterPageState extends State<CounterPage> {
                 style: ElevatedButton.styleFrom(
                   padding: const EdgeInsets.all(40),
                   shape: const CircleBorder(),
-                  backgroundColor: Colors.brown,
                 ),
                 child: Text(
                   '$_counter',
-                  style: const TextStyle(fontSize: 32, color: Colors.white),
+                  style: const TextStyle(fontSize: 32),
                 ),
               ),
       ),

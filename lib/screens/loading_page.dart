@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'login_page.dart';
-import 'counter_page.dart';
 
 class LoadingPage extends StatefulWidget {
   const LoadingPage({super.key});
@@ -21,21 +19,12 @@ class _LoadingPageState extends State<LoadingPage> {
     final prefs = await SharedPreferences.getInstance();
     final isLoggedIn = prefs.getBool('loggedIn') ?? false;
 
-    if (!mounted) return; // <- Sicherheit
+    if (!mounted) return;
 
-    if (isLoggedIn) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const CounterPage()),
-      );
-    } else {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-      );
-    }
+    Navigator.of(context).pushReplacementNamed(
+      isLoggedIn ? '/counter' : '/login',
+    );
   }
-
 
   @override
   Widget build(BuildContext context) {

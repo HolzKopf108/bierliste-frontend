@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'loading_page.dart';
-
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
@@ -21,7 +19,7 @@ class _LoginPageState extends State<LoginPage> {
     if (_formKey.currentState!.validate()) {
       setState(() => _isLoading = true);
 
-      // Simulierter API Call (später durch echten ersetzen)
+      // Simulierter API Call
       await Future.delayed(const Duration(seconds: 2));
 
       // Login-Status speichern
@@ -31,11 +29,8 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
       setState(() => _isLoading = false);
 
-      // Zurück zur LoadingPage → prüft erneut den Login-Zustand
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const LoadingPage()),
-      );
+      // Weiterleiten zur Counter-Seite (zentral geroutet)
+      Navigator.of(context).pushReplacementNamed('/counter');
     }
   }
 
@@ -76,15 +71,13 @@ class _LoginPageState extends State<LoginPage> {
                     obscureText: !_passwordVisible,
                     decoration: InputDecoration(
                       labelText: 'Passwort',
-                      border: OutlineInputBorder(),
+                      border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(
                           _passwordVisible ? Icons.visibility : Icons.visibility_off,
                         ),
                         onPressed: () {
-                          setState(() {
-                            _passwordVisible = !_passwordVisible;
-                          });
+                          setState(() => _passwordVisible = !_passwordVisible);
                         },
                       ),
                     ),

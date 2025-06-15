@@ -13,7 +13,7 @@ class GroupHomePage extends StatefulWidget {
 
 class _GroupHomePageState extends State<GroupHomePage> {
   int _strichCount = 0;
-  double _pricePerStrich = 1.5; // Beispielpreis
+  double _pricePerStrich = 1.5;
 
   void _incrementStrich([int amount = 1]) {
     setState(() {
@@ -81,7 +81,11 @@ class _GroupHomePageState extends State<GroupHomePage> {
         title: Text(widget.groupName),
         leading: IconButton(
           icon: const Icon(Icons.group),
-          onPressed: () => Navigator.pushNamed(context, '/groups'),
+          onPressed: () => Navigator.pushNamed(
+                            context,
+                            '/groups',
+                            arguments: widget.groupName,
+                          ),
         ),
         actions: [
           IconButton(
@@ -138,14 +142,25 @@ class _GroupHomePageState extends State<GroupHomePage> {
               title: const Text('Mitgliederübersicht'),
               subtitle: const Text('Alle Mitglieder & Striche sehen'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
+              onTap: () {
+                Navigator.pushNamed(context, '/groupUsers', arguments: widget.groupName);
+              },
             ),
             ListTile(
               leading: const Icon(Icons.history),
-              title: const Text('Mein Verlauf'),
-              subtitle: const Text('Eigene Aktivitäten anzeigen'),
+              title: const Text('Verlauf'),
+              subtitle: const Text('Aktivitäten anzeigen'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
+              onTap: () {
+                Navigator.of(context).pushNamed(
+                  '/groupActivity',
+                  arguments: {
+                    'groupId': "hallo",
+                    'groupName': widget.groupName,
+                    'currentUserId': "ich",
+                  },
+                );
+              },
             ),
             const SizedBox(height: 20),
             const Divider(indent: 16, endIndent: 16),
@@ -154,7 +169,9 @@ class _GroupHomePageState extends State<GroupHomePage> {
               leading: const Icon(Icons.handyman),
               title: const Text('Gruppeneinstellungen'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
+              onTap: () {
+                Navigator.pushNamed(context, '/groupSettings', arguments: 000000000);
+              },
             ),
           ],
         ),

@@ -10,7 +10,7 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _passwordVisible = false;
@@ -52,15 +52,15 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 40),
                   TextFormField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
+                    controller: _usernameController,
+                    keyboardType: TextInputType.name,
                     decoration: const InputDecoration(
-                      labelText: 'E-Mail',
+                      labelText: 'Benutzername',
                       border: OutlineInputBorder(),
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty || !value.contains('@')) {
-                        return 'Bitte gültige E-Mail eingeben';
+                      if (value == null || value.isEmpty) {
+                        return 'Bitte gültige Benutzernamen eingeben';
                       }
                       return null;
                     },

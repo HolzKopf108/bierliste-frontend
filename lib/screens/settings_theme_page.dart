@@ -11,22 +11,25 @@ class SettingsThemePage extends StatelessWidget {
     final currentMode = provider.themeMode;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Einstellungen')),
+      appBar: AppBar(title: const Text('Theme ändern')),
       body: ListView(
+        padding: const EdgeInsets.all(16),
         children: [
-          const ListTile(title: Text('Theme')),
+          const SizedBox(height: 30),
           RadioListTile<ThemeMode>(
             title: const Text('System'),
             value: ThemeMode.system,
             groupValue: currentMode,
             onChanged: (mode) => provider.setTheme(mode!),
           ),
+          const SizedBox(height: 30),
           RadioListTile<ThemeMode>(
             title: const Text('Hell'),
             value: ThemeMode.light,
             groupValue: currentMode,
             onChanged: (mode) => provider.setTheme(mode!),
           ),
+          const SizedBox(height: 30),
           RadioListTile<ThemeMode>(
             title: const Text('Dunkel'),
             value: ThemeMode.dark,

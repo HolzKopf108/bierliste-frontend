@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:bierliste/config/app_config.example.dart';
+import 'package:bierliste/config/app_config.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
@@ -85,7 +85,7 @@ class Activity {
 class GroupActivityPage extends StatefulWidget {
   final String groupId;
   final String groupName;
-  final String currentUserId; // zur Filterung "Nur ich"
+  final String currentUserId; 
 
   const GroupActivityPage({
     Key? key,
@@ -128,7 +128,7 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
         : '';
 
     final url = Uri.https(
-      AppConfig.apiBaseUrl, 
+      '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}',
       AppConfig.activities,
       {
         'offset': _offset.toString(),

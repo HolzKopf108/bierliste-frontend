@@ -1,62 +1,58 @@
-import 'package:flutter/material.dart';
 import 'package:bierliste/services/api_service.dart';
+import 'package:flutter/material.dart';
 
-class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+class RegisterPage extends StatefulWidget {
+  const RegisterPage({super.key});
 
   @override
-  State<LoginPage> createState() => _LoginPageState();
+  State<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _LoginPageState extends State<LoginPage> {
+class _RegisterPageState extends State<RegisterPage> {
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
+  final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
+  final _apiService = ApiService(); 
+
   bool _isLoading = false;
   bool _passwordVisible = false;
+  bool _passwordVisible2 = false;
 
-  final _apiService = ApiService();
-
-  void _login() async {
+  Future<void> _register() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
-    final error = await _apiService.loginUser(
+    final error = await _apiService.registerUser(
       email: _emailController.text.trim(),
+      username: _usernameController.text.trim(),
       password: _passwordController.text,
     );
 
     setState(() => _isLoading = false);
 
     if (!mounted) return;
-
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/counter');
-    } 
-    else if (error.contains('Email nicht verifiziert')) {
       Navigator.of(context).pushReplacementNamed('/verify', arguments: _emailController.text.trim());
-    }
-    else {
+    } else {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
-          title: const Text('Login fehlgeschlagen'),
+          title: const Text('Fehler'),
           content: Text(error),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('OK'),
-            )
+            ),
           ],
         ),
       );
     }
   }
 
-  void _navigateToRegister() {
-    Navigator.of(context).pushNamed('/register');
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -71,7 +67,7 @@ class _LoginPageState extends State<LoginPage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Text(
-                    'Bierliste Login',
+                    'Registrieren',
                     style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 40),
@@ -85,6 +81,20 @@ class _LoginPageState extends State<LoginPage> {
                     validator: (value) {
                       if (value == null || value.isEmpty || !value.contains('@')) {
                         return 'Bitte gültige Email eingeben';
+                      }
+                      return null;
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _usernameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Benutzername',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.length < 3) {
+                        return 'Benutzername zu kurz';
                       }
                       return null;
                     },
@@ -112,46 +122,40 @@ class _LoginPageState extends State<LoginPage> {
                       return null;
                     },
                   ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: _confirmPasswordController,
+                    obscureText: !_passwordVisible2,
+                    decoration: InputDecoration(
+                      labelText: 'Passwort bestätigen',
+                      border: OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _passwordVisible2 ? Icons.visibility : Icons.visibility_off,
+                        ),
+                        onPressed: () {
+                          setState(() => _passwordVisible2 = !_passwordVisible2);
+                        },
+                      ),
+                    ),
+                    validator: (value) {
+                      if (value != _passwordController.text) {
+                        return 'Passwörter stimmen nicht überein';
+                      }
+                      return null;
+                    },
+                  ),
                   const SizedBox(height: 24),
                   _isLoading
                       ? const CircularProgressIndicator()
                       : SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
-                            onPressed: _login,
+                            onPressed: _register,
                             style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
-                            child: const Text('Anmelden'),
+                            child: const Text('Registrieren'),
                           ),
                         ),
-                  const SizedBox(height: 16),
-                  TextButton(
-                    onPressed: _navigateToRegister,
-                    child: const Text("Noch kein Konto? Jetzt registrieren"),
-                  ),
-                  const SizedBox(height: 16),
-                  const Divider(),
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Google Login implementieren
-                      },
-                      icon: const Icon(Icons.login),
-                      label: const Text('Mit Google anmelden'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Apple Login implementieren
-                      },
-                      icon: const Icon(Icons.apple),
-                      label: const Text('Mit Apple anmelden'),
-                    ),
-                  ),
                 ],
               ),
             ),

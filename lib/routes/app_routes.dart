@@ -12,6 +12,7 @@ import '../screens/group_activity_page.dart';
 import '../screens/group_settings_page.dart';
 import '../screens/register_page.dart';
 import '../screens/verify_page.dart';
+import '../screens/forgot_password_page.dart';
 
 class AppRoutes {
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
@@ -24,6 +25,8 @@ class AppRoutes {
         return _slide(VerifyPage(email: settings.arguments as String));
       case '/login':
         return _default(MaterialPageRoute(builder: (_) => const LoginPage()));
+      case '/forgotPassword':
+        return _slide(ForgotPasswordPage(email: settings.arguments as String));
       case '/counter':
         return _slide(const CounterPage());
       case '/settings':

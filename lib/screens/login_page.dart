@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:bierliste/services/api_service.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -58,6 +60,62 @@ class _LoginPageState extends State<LoginPage> {
     Navigator.of(context).pushNamed('/register');
   }
 
+  void _loginGoogle() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        scopes: ['email'],
+        serverClientId: dotenv.env['GOOGLE_WEB_CLIENT_ID'],
+      );
+
+      final googleUser = await googleSignIn.signIn();
+      final googleAuth = await googleUser?.authentication;
+      final idToken = googleAuth?.idToken;
+
+      debugPrint('Google user: $googleUser');
+      debugPrint('Google auth: $googleAuth');
+      debugPrint('ID Token: $idToken');
+
+      if (idToken == null) {
+        _showError('Google Login fehlgeschlagen');
+        return;
+      }
+
+      final error = await _apiService.loginGoogle(idToken);
+
+      if (!mounted) return;
+
+      if (error == null) {
+        Navigator.of(context).pushReplacementNamed('/counter');
+      } else {
+        _showError(error);
+      }
+    } catch (e) {
+      _showError('Google Login nicht möglich: $e');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  //void _loginApple() { }
+
+  void _showError(String message) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Fehler'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          )
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -112,7 +170,14 @@ class _LoginPageState extends State<LoginPage> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 10),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pushNamed('/forgotPassword', arguments: _emailController.text.trim());
+                    },
+                    child: const Text('Passwort vergessen?'),
+                  ),
+                  const SizedBox(height: 16),
                   _isLoading
                       ? const CircularProgressIndicator()
                       : SizedBox(
@@ -128,14 +193,14 @@ class _LoginPageState extends State<LoginPage> {
                     onPressed: _navigateToRegister,
                     child: const Text("Noch kein Konto? Jetzt registrieren"),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
                   const Divider(),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: () {
-                        // TODO: Google Login implementieren
+                        _loginGoogle();
                       },
                       icon: const Icon(Icons.login),
                       label: const Text('Mit Google anmelden'),
@@ -145,9 +210,9 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
-                      onPressed: () {
-                        // TODO: Apple Login implementieren
-                      },
+                      onPressed: null, // () {
+                        /// _loginApple();
+                      //  },
                       icon: const Icon(Icons.apple),
                       label: const Text('Mit Apple anmelden'),
                     ),

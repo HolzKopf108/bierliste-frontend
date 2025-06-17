@@ -94,6 +94,32 @@ class ApiService {
     }
   }
 
+  Future<String?> loginGoogle(String idToken) async {
+    final url = Uri.parse('${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.google}');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'idToken': idToken}),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('accessToken', data['accessToken']);
+        await prefs.setString('refreshToken', data['refreshToken']);
+        return null;
+      } else {
+        final body = jsonDecode(response.body);
+        return body['error'] ?? 'Login mit Google fehlgeschlagen';
+      }
+    } catch (e) {
+      debugPrint('Google Login Fehler: $e');
+      return 'Verbindung fehlgeschlagen';
+    }
+  }
+
   Future<String?> verifyEmail({
     required String email,
     required String code,

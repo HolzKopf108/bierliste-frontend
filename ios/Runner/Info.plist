@@ -45,5 +45,22 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.454295655792-fh5sdmfvis4p2ee09736kqjo47q8ar8b</string>
+			</array>
+		</dict>
+	</array>
+
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>google</string>
+		<string>com-google-gidconsent</string>
+		<string>com.googleusercontent.apps.454295655792-fh5sdmfvis4p2ee09736kqjo47q8ar8b</string>
+	</array>
 </dict>
 </plist>

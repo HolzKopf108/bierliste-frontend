@@ -7,4 +7,5 @@ class AppConfigExample {
   static const String login = '/path/to/api';
   static const String verify = '/path/to/api';
   static const String resend = '/path/to/api';
+  static const String google = '/path/to/api';
 }

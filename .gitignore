@@ -46,3 +46,5 @@ app.*.map.json
 
 instructions.txt
 lib/config/app_config.dart
+
+.env

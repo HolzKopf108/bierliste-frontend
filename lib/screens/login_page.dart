@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:bierliste/services/api_service.dart';
+import 'package:bierliste/services/auth_api_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/auth_provider.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -17,16 +20,18 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _passwordVisible = false;
 
-  final _apiService = ApiService();
+  final _apiService = AuthApiService();
 
   void _login() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
 
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final error = await _apiService.loginUser(
       email: _emailController.text.trim(),
       password: _passwordController.text,
+      authProvider: authProvider,
     );
 
     setState(() => _isLoading = false);
@@ -82,7 +87,10 @@ class _LoginPageState extends State<LoginPage> {
         return;
       }
 
-      final error = await _apiService.loginGoogle(idToken);
+      if (!mounted) return;
+
+      final authProvider = Provider.of<AuthProvider>(context, listen: false);
+      final error = await _apiService.loginGoogle(idToken, authProvider);
 
       if (!mounted) return;
 

@@ -60,7 +60,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                     border: OutlineInputBorder(),
                   ),
                   validator: (value) {
-                    if (value == null || !value.contains('@')) {
+                    if (value == null || value.isEmpty || !value.contains('@')) {
                       return 'Bitte gültige E-Mail eingeben';
                     }
                     return null;

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
 
 class LoadingPage extends StatefulWidget {
   const LoadingPage({super.key});
@@ -12,18 +13,37 @@ class _LoadingPageState extends State<LoadingPage> {
   @override
   void initState() {
     super.initState();
-    _checkLogin();
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    authProvider.initialize();
+    authProvider.addListener(_authStateChanged);
   }
 
-  Future<void> _checkLogin() async {
-    final prefs = await SharedPreferences.getInstance();
-    final isLoggedIn = prefs.getBool('loggedIn') ?? false;
+  void _authStateChanged() {
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
+    if (authProvider.isInitialized) {
+      _handleNavigation(authProvider);
+    }
+  }
+
+  Future<void> _handleNavigation(AuthProvider authProvider) async {
     if (!mounted) return;
 
-    Navigator.of(context).pushReplacementNamed(
-      isLoggedIn ? '/counter' : '/login',
-    );
+    if (!authProvider.isAuthenticated) {
+      await authProvider.logout(); 
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Navigator.of(context).pushReplacementNamed(
+        authProvider.isAuthenticated ? '/counter' : '/login',
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    Provider.of<AuthProvider>(context, listen: false).removeListener(_authStateChanged);
+    super.dispose();
   }
 
   @override

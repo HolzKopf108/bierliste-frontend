@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:bierliste/services/api_service.dart';
+import 'package:bierliste/services/auth_api_service.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/auth_provider.dart';
 
 class VerifyPage extends StatefulWidget {
   final String email;
@@ -14,7 +17,7 @@ class VerifyPage extends StatefulWidget {
 class _VerifyPageState extends State<VerifyPage> {
   final _codeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
-  final _apiService = ApiService();
+  final _apiService = AuthApiService();
   bool _isLoading = false;
 
   Future<void> _submitCode() async {
@@ -22,9 +25,11 @@ class _VerifyPageState extends State<VerifyPage> {
 
     setState(() => _isLoading = true);
 
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
     final error = await _apiService.verifyEmail(
       email: widget.email,
       code: _codeController.text.trim(),
+      authProvider: authProvider,
     );
 
     setState(() => _isLoading = false);

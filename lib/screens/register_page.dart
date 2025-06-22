@@ -1,4 +1,4 @@
-import 'package:bierliste/services/api_service.dart';
+import 'package:bierliste/services/auth_api_service.dart';
 import 'package:flutter/material.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -14,7 +14,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _apiService = ApiService(); 
+  final _apiService = AuthApiService(); 
 
   bool _isLoading = false;
   bool _passwordVisible = false;

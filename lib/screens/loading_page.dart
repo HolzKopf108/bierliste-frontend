@@ -34,8 +34,13 @@ class _LoadingPageState extends State<LoadingPage> {
       await authProvider.logout();
     }
 
+    _authProvider.removeListener(_authStateChanged);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      safePushReplacementNamed(context, authProvider.isAuthenticated ? '/counter' : '/login');
+      safePushReplacementNamed(
+        context,
+        authProvider.isAuthenticated ? '/counter' : '/login',
+      );
     });
   }
 

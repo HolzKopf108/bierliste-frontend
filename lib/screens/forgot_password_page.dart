@@ -38,7 +38,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     if (!mounted) return;
 
     if(error == null) {
-      safePushReplacementNamed(context, '/resetCode', arguments: _emailController.text.trim());
+      safePushReplacementNamed(context, '/passwordVerify', arguments: _emailController.text.trim());
     }
     else {
       showDialog(

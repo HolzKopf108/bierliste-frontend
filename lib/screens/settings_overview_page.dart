@@ -1,5 +1,6 @@
 import 'package:bierliste/providers/auth_provider.dart';
 import 'package:bierliste/services/user_api_service.dart';
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -44,8 +45,8 @@ class SettingsOverviewPage extends StatelessWidget {
 
                     final success = true; // await verifyPassword(password);
                     if (success && context.mounted) {
-                      Navigator.of(context).pop();
-                      Navigator.of(context).pushNamed('/settingsProfil');
+                      safePop(context);
+                      safePushNamed(context, '/settingsProfil');
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(content: Text('Passwort falsch')),
@@ -70,7 +71,7 @@ class SettingsOverviewPage extends StatelessWidget {
     await authProvider.logout();
 
     if (!context.mounted) return;
-    Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
+    safePushNamedAndRemoveUntil(context, '/');
   }
 
   @override

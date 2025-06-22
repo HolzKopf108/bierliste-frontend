@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../utils/money_input_formatter.dart';
+import '../utils/navigation_helper.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final int groupId;
@@ -60,11 +61,14 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       headers: {'Content-Type': 'application/json'},
       body: payload,
     );
+
+    if (!mounted) return;
+
     if (response.statusCode == 200) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Einstellungen gespeichert')),
       );
-      Navigator.of(context).pop();
+      safePop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Fehler beim Speichern der Einstellungen')),
@@ -75,8 +79,11 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _leaveGroup() async {
     final url = Uri.parse('https://your.backend.api/groups/${widget.groupId}/leave');
     final response = await http.post(url);
+
+    if (!mounted) return;
+
     if (response.statusCode == 200) {
-      Navigator.of(context).pop();
+      safePop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Fehler beim Verlassen der Gruppe')),

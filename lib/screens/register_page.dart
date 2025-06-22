@@ -1,4 +1,5 @@
 import 'package:bierliste/services/auth_api_service.dart';
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -35,7 +36,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     if (!mounted) return;
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/verify', arguments: _emailController.text.trim());
+      safePushReplacementNamed(context, '/verify', arguments: _emailController.text.trim());
     } else {
       showDialog(
         context: context,

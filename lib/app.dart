@@ -8,6 +8,7 @@ import 'services/http_service.dart';
 import 'providers/auth_provider.dart';
 import 'main.dart';
 import 'config/app_theme.dart';
+import 'utils/navigation_helper.dart';
 
 class BierlisteApp extends StatelessWidget {
   const BierlisteApp({super.key});
@@ -22,10 +23,7 @@ class BierlisteApp extends StatelessWidget {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       HttpService.onUnauthorized = () {
         authProvider.logout();
-        Navigator.of(navigatorKey.currentContext!).pushNamedAndRemoveUntil(
-          '/login',
-          (route) => false,
-        );
+        safeGlobalPushNamedAndRemoveUntil('/login');
       };
 
       syncProvider.onReconnected = () async {
@@ -37,7 +35,7 @@ class BierlisteApp extends StatelessWidget {
           final refreshed = await HttpService.refreshTokens();
           if (!refreshed) {
             await authProvider.logout();
-            navigatorKey.currentState?.pushNamedAndRemoveUntil('/login', (_) => false);
+            safeGlobalPushNamedAndRemoveUntil('/login');
             return;
           }
         }

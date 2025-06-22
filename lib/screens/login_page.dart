@@ -1,3 +1,4 @@
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:bierliste/services/auth_api_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -39,10 +40,10 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
 
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/');
+      safePushReplacementNamed(context, '/');
     } 
     else if (error.contains('Email nicht verifiziert')) {
-      Navigator.of(context).pushReplacementNamed('/verify', arguments: _emailController.text.trim());
+      safePushReplacementNamed(context, '/verify', arguments: _emailController.text.trim());
     }
     else {
       showDialog(
@@ -62,7 +63,7 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   void _navigateToRegister() {
-    Navigator.of(context).pushNamed('/register');
+    safePushNamed(context, '/register');
   }
 
   void _loginGoogle() async {
@@ -95,7 +96,7 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
 
       if (error == null) {
-        Navigator.of(context).pushReplacementNamed('/');
+        safePushReplacementNamed(context, '/');
       } else {
         _showError(error);
       }

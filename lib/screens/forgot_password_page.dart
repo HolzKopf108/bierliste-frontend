@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/auth_api_service.dart';
+import '../utils/navigation_helper.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   final String email;
@@ -35,9 +36,9 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
     setState(() => _isLoading = false);
 
     if (!mounted) return;
-    
+
     if(error == null) {
-      Navigator.of(context).pushReplacementNamed('/resetCode', arguments: _emailController.text.trim());
+      safePushReplacementNamed(context, '/resetCode', arguments: _emailController.text.trim());
     }
     else {
       showDialog(

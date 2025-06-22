@@ -1,3 +1,4 @@
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:bierliste/services/auth_api_service.dart';
@@ -37,7 +38,7 @@ class _PasswordVerifyPageState extends State<PasswordVerifyPage> {
     if (!mounted) return;
 
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/resetPassword', arguments: widget.email);
+      safePushReplacementNamed(context, '/resetPassword', arguments: widget.email);
     } else {
       showDialog(
         context: context,

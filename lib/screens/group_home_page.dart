@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../widgets/toast.dart';
+import '../utils/navigation_helper.dart';
 
 class GroupHomePage extends StatefulWidget {
   final String groupName;
@@ -69,7 +70,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
       return;
     }
     _incrementStrich(value);
-    Navigator.of(context).pop();
+    safePop(context);
   }
 
   @override

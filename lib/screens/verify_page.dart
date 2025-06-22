@@ -1,3 +1,4 @@
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:bierliste/services/auth_api_service.dart';
@@ -37,7 +38,7 @@ class _VerifyPageState extends State<VerifyPage> {
     if (!mounted) return;
 
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/');
+      safePushReplacementNamed(context, '/');
     } else {
       showDialog(
         context: context,

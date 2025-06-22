@@ -1,3 +1,4 @@
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
@@ -10,19 +11,19 @@ class LoadingPage extends StatefulWidget {
 }
 
 class _LoadingPageState extends State<LoadingPage> {
+  late final AuthProvider _authProvider;
+
   @override
   void initState() {
     super.initState();
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    authProvider.initialize();
-    authProvider.addListener(_authStateChanged);
+    _authProvider = Provider.of<AuthProvider>(context, listen: false);
+    _authProvider.initialize();
+    _authProvider.addListener(_authStateChanged);
   }
 
   void _authStateChanged() {
-    final authProvider = Provider.of<AuthProvider>(context, listen: false);
-
-    if (authProvider.isInitialized) {
-      _handleNavigation(authProvider);
+    if (_authProvider.isInitialized) {
+      _handleNavigation(_authProvider);
     }
   }
 
@@ -30,19 +31,17 @@ class _LoadingPageState extends State<LoadingPage> {
     if (!mounted) return;
 
     if (!authProvider.isAuthenticated) {
-      await authProvider.logout(); 
+      await authProvider.logout();
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Navigator.of(context).pushReplacementNamed(
-        authProvider.isAuthenticated ? '/counter' : '/login',
-      );
+      safePushReplacementNamed(context, authProvider.isAuthenticated ? '/counter' : '/login');
     });
   }
 
   @override
   void dispose() {
-    Provider.of<AuthProvider>(context, listen: false).removeListener(_authStateChanged);
+    _authProvider.removeListener(_authStateChanged);
     super.dispose();
   }
 

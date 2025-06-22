@@ -1,3 +1,4 @@
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:animated_list_plus/animated_list_plus.dart';
@@ -90,13 +91,9 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
 
   void _openGroup(String groupName) {
     if (groupName.trim().toLowerCase() == _previousGroup?.trim().toLowerCase()) {
-      Navigator.pop(context);
+      safePop(context);
     } else {
-      Navigator.pushNamed(
-        context,
-        '/groupDetail',
-        arguments: groupName,
-      );
+      safePushNamed(context, '/groupDetail', arguments: groupName);
     }
   }
 

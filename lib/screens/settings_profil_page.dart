@@ -1,3 +1,4 @@
+import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 
 class SettingsProfilPage extends StatefulWidget {
@@ -69,7 +70,7 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
       _originalDisplayName = newDisplayName;
       _password1Controller.clear();
       _password2Controller.clear();
-      Navigator.of(context).pop();
+      safePop(context);
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(

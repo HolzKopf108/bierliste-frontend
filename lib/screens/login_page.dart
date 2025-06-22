@@ -39,7 +39,7 @@ class _LoginPageState extends State<LoginPage> {
     if (!mounted) return;
 
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/counter');
+      Navigator.of(context).pushReplacementNamed('/');
     } 
     else if (error.contains('Email nicht verifiziert')) {
       Navigator.of(context).pushReplacementNamed('/verify', arguments: _emailController.text.trim());
@@ -95,7 +95,7 @@ class _LoginPageState extends State<LoginPage> {
       if (!mounted) return;
 
       if (error == null) {
-        Navigator.of(context).pushReplacementNamed('/counter');
+        Navigator.of(context).pushReplacementNamed('/');
       } else {
         _showError(error);
       }

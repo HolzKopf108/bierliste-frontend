@@ -1,4 +1,5 @@
 import 'package:bierliste/screens/group_overview_page.dart';
+import 'package:bierliste/screens/reset_password_page.dart';
 import 'package:flutter/material.dart';
 import '../screens/loading_page.dart';
 import '../screens/login_page.dart';
@@ -27,6 +28,8 @@ class AppRoutes {
         return _default(MaterialPageRoute(builder: (_) => const LoginPage()));
       case '/forgotPassword':
         return _slide(ForgotPasswordPage(email: settings.arguments as String));
+      case '/resetPassword':
+        return _slide(ResetPasswordPage(email: settings.arguments as String));
       case '/counter':
         return _slide(const CounterPage());
       case '/settings':

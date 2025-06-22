@@ -113,15 +113,6 @@ class AuthApiService {
 
         await authProvider.login(accessToken, refreshToken, userEmail);
         return null;
-      } else if (response.statusCode == 403) {
-        final body = jsonDecode(response.body);
-        final error = body['error'] ?? '';
-        if (error.contains('nicht verifiziert')) {
-          await resendVerificationCode(email: email);
-          return 'E-Mail nicht verifiziert. Neuer Code gesendet.';
-        } else {
-          return 'Unbekannter Fehler bei Verifizierung';
-        }
       } else {
         final body = jsonDecode(response.body);
         return body['error'] ?? 'Verifizierung fehlgeschlagen';
@@ -164,6 +155,24 @@ class AuthApiService {
       return body['error'] ?? 'Unbekannter Fehler beim Zurücksetzen';
     } catch (e) {
       debugPrint('Fehler bei resetPassword: $e');
+      return 'Verbindungsfehler';
+    }
+  }
+
+  Future<String?> resetPasswordResend({required String email}) async {
+    try {
+      final response = await HttpService.unauthorizedRequest(
+        '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.resetPasswordResend}',
+        'POST',
+        body: {'email': email},
+      );
+
+      if (response.statusCode == 200) return null;
+
+      final body = jsonDecode(response.body);
+      return body['error'] ?? 'Fehler beim erneuten Senden';
+    } catch (e) {
+      debugPrint('Fehler bei resend: $e');
       return 'Verbindungsfehler';
     }
   }

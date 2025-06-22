@@ -5,16 +5,16 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 
-class VerifyPage extends StatefulWidget {
+class PasswordVerifyPage extends StatefulWidget {
   final String email;
 
-  const VerifyPage({super.key, required this.email});
+  const PasswordVerifyPage({super.key, required this.email});
 
   @override
-  State<VerifyPage> createState() => _VerifyPageState();
+  State<PasswordVerifyPage> createState() => _PasswordVerifyPageState();
 }
 
-class _VerifyPageState extends State<VerifyPage> {
+class _PasswordVerifyPageState extends State<PasswordVerifyPage> {
   final _codeController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
   final _apiService = AuthApiService();
@@ -37,7 +37,7 @@ class _VerifyPageState extends State<VerifyPage> {
     if (!mounted) return;
 
     if (error == null) {
-      Navigator.of(context).pushReplacementNamed('/');
+      Navigator.of(context).pushReplacementNamed('/resetPassword', arguments: widget.email);
     } else {
       showDialog(
         context: context,
@@ -58,7 +58,7 @@ class _VerifyPageState extends State<VerifyPage> {
   Future<void> _resendCode() async {
     setState(() => _isLoading = true);
 
-    final error = await _apiService.resendVerificationCode(email: widget.email);
+    final error = await _apiService.resetPasswordResend(email: widget.email);
 
     setState(() => _isLoading = false);
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/auth_api_service.dart';
 
 class ForgotPasswordPage extends StatefulWidget {
   final String email;
@@ -14,6 +15,8 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   final _emailController = TextEditingController();
   bool _isLoading = false;
 
+  final _apiService = AuthApiService();
+
   @override
   void initState() {
     super.initState();
@@ -25,14 +28,32 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
 
     setState(() => _isLoading = true);
 
-    // Hier kommt später dein API-Service-Aufruf
-    await Future.delayed(const Duration(seconds: 2));
+    final error = await _apiService.resetPassword(
+      email: _emailController.text.trim(),
+    );
 
     setState(() => _isLoading = false);
 
-    // Beispiel: zur Code-Eingabe-Seite weiterleiten
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed('/resetCode', arguments: _emailController.text.trim());
+    
+    if(error == null) {
+      Navigator.of(context).pushReplacementNamed('/resetCode', arguments: _emailController.text.trim());
+    }
+    else {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Login fehlgeschlagen'),
+          content: Text(error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            )
+          ],
+        ),
+      );
+    }
   }
 
   @override

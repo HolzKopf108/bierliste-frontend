@@ -1,4 +1,7 @@
+import 'package:bierliste/providers/auth_provider.dart';
+import 'package:bierliste/services/user_api_service.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsOverviewPage extends StatelessWidget {
@@ -56,6 +59,18 @@ class SettingsOverviewPage extends StatelessWidget {
         );
       },
     );
+  }
+
+  void _logout(BuildContext context) async {
+    final userApiService = UserApiService();
+    
+    await userApiService.logout();
+
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
+    await authProvider.logout();
+
+    if (!context.mounted) return;
+    Navigator.of(context).pushNamedAndRemoveUntil('/', (_) => false);
   }
 
   @override
@@ -127,17 +142,9 @@ class SettingsOverviewPage extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 textStyle: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              onPressed: () async {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setBool('loggedIn', false);
-
-                if (!context.mounted) return;
-
-                Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
-              },
+              onPressed: () => _logout(context),
             ),
           ),
-
           const SizedBox(height: 32),
         ],
       ),

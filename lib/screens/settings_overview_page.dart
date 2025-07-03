@@ -66,11 +66,41 @@ class SettingsOverviewPage extends StatelessWidget {
   }
 
   void _logout(BuildContext context) async {
-    final userApiService = UserApiService();
-    
-    await userApiService.logout();
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Center(
+          child: Text(
+            'Wirklich abmelden?',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+        content: const Text(
+          'Du wirst von deinem Konto abgemeldet.',
+          textAlign: TextAlign.center,
+        ),
+        actionsAlignment: MainAxisAlignment.center, // <--- zentriert die Buttons!
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Abmelden'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout != true) return;
+
+    await UserApiService().logout();
 
     if (!context.mounted) return;
+
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.logout();
   }

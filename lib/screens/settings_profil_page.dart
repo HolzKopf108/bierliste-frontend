@@ -1,3 +1,4 @@
+import 'package:bierliste/providers/auth_provider.dart';
 import 'package:bierliste/providers/user_provider.dart';
 import 'package:bierliste/services/token_service.dart';
 import 'package:bierliste/services/user_service.dart';
@@ -98,6 +99,67 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
     }
   }
 
+  void _showDeleteAccountDialog() {
+    final TextEditingController confirmController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Konto löschen'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                '⚠️ Dieser Vorgang kann nicht rückgängig gemacht werden.\n'
+                'Um dein Konto zu löschen, gib „LÖSCHEN“ ein.',
+                style: TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: confirmController,
+                decoration: const InputDecoration(
+                  labelText: 'Bestätigung',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Abbrechen'),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.delete),
+              label: const Text('Löschen'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () async {
+                if (confirmController.text.trim() == 'LÖSCHEN') {
+                  Navigator.of(context).pop();
+                  final error = await UserService.deleteAccount();
+                  if (!context.mounted) return;
+                  if (error != null) {
+                    Toast.show(context, error);
+                  } else {
+                    Toast.show(context, 'Konto erfolgreich gelöscht');
+                    await context.read<AuthProvider>().logout();
+                  }
+                } else {
+                  Toast.show(context, 'Falsche Eingabe. Bitte „LÖSCHEN“ eingeben.');
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -180,9 +242,9 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
               },
             ),
 
-            const SizedBox(height: 30),
+            const SizedBox(height: 50),
             const Divider(indent: 16, endIndent: 16),
-            const SizedBox(height: 30),
+            const SizedBox(height: 50),
 
             ElevatedButton.icon(
               icon: const Icon(Icons.save),
@@ -202,7 +264,71 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
               onPressed: _isLoading ? null : _saveProfile,
             ),
 
-            const SizedBox(height: 32),
+            const SizedBox(height: 50),
+            Row(
+              children: const [
+                Expanded(child: Divider()),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Gefahrenbereich',
+                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 35),
+
+            Container(
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: const [
+                      Icon(Icons.warning_amber_rounded, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text(
+                        'Konto unwiderruflich löschen',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Dein Konto und alle Daten werden dauerhaft gelöscht. Dieser Vorgang kann nicht rückgängig gemacht werden.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.delete_forever),
+                      label: const Text('KONTO LÖSCHEN'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: _showDeleteAccountDialog,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 50),
           ],
         ),
       ),

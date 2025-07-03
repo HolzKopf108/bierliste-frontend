@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:bierliste/services/user_settings_api_service.dart';
+import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import '../models/user_settings.dart';
 
@@ -20,15 +21,24 @@ class UserSettingsService {
     var settings = box.get(_key);
 
     if (settings == null) {
+
+      debugPrint('settings sind null');
+
       final data = await UserSettingsApiService().getUserSettings();
 
       if (data == null) {
+
+        debugPrint('data ist null');
+
         return await saveLokalSettings(
           'system',
           true,
           DateTime.now(),
         );
       }
+
+      debugPrint('NEUE LOKALE SETTINGS ERSTELLEN');
+      debugPrint(data["theme"]);
       
       return await saveLokalSettings(
         data["theme"], 
@@ -36,6 +46,9 @@ class UserSettingsService {
         DateTime.parse(data["lastUpdated"])
       );
     }
+
+    debugPrint('settings sind da');
+    debugPrint(settings.theme);
 
     await updateSettings(
       theme: settings.theme,

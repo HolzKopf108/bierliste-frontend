@@ -100,4 +100,20 @@ class UserApiService {
       return;
     }
   }
+
+  Future<String?> deleteAccount() async {
+    try {
+      final response = await HttpService.authorizedRequest(
+        '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.deleteAccount}',
+        'DELETE',
+      );
+
+      if (response.statusCode == 200) return null;
+
+      final data = jsonDecode(response.body);
+      return data['error'] ?? 'Unbekannter Fehler bei delete account';
+    } catch(e) {
+      return 'Netzwerkfehler';
+    }
+  }
 }

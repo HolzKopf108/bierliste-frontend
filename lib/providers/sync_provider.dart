@@ -18,7 +18,9 @@ class SyncProvider with ChangeNotifier {
   bool get isSyncing => _isSyncing;
 
   SyncProvider() {
-    loadAutoSyncEnabled();
+    _autoSyncEnabled = true;
+    notifyListeners();
+    startMonitoring();
   }
 
   Future<void> loadAutoSyncEnabled() async {

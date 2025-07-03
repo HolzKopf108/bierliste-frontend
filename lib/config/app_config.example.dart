@@ -21,4 +21,5 @@ class AppConfigExample {
   static const String updatePassword = '/path/to/api';
   static const String userSettings = '/path/to/api';
   static const String userVerifyPassword = '/path/to/api';
+  static const String deleteAccount = '/path/to/api';
 }

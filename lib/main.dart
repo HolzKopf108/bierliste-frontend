@@ -22,7 +22,7 @@ void main() async {
   Hive.registerAdapter(UserAdapter());
 
   final themeProvider = ThemeProvider();
-  await themeProvider.loadTheme();
+  themeProvider.initialize();
 
   runApp(
     MultiProvider(

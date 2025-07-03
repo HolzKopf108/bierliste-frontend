@@ -5,6 +5,11 @@ class ThemeProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.system;
   ThemeMode get themeMode => _themeMode;
 
+  void initialize() {
+    _themeMode = ThemeMode.system;
+    notifyListeners();
+  }
+
   Future<void> loadTheme() async {
     final settings = await UserSettingsService.load();
     final themeString = settings.theme;

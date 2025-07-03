@@ -81,4 +81,8 @@ class UserService {
     final box = await _openBox();
     await box.delete(_key);
   }
+
+  static Future<String?> deleteAccount() async {
+    return await UserApiService().deleteAccount();
+  }
 }

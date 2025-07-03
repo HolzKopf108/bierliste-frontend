@@ -38,6 +38,12 @@ class AuthProvider with ChangeNotifier {
     if (_authenticated) {
       final userProvider = Provider.of<UserProvider>(navigatorKey.currentContext!, listen: false);
       await userProvider.loadUser();
+
+      final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
+      await themeProvider.loadTheme();
+
+      final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+      await syncProvider.loadAutoSyncEnabled();
     }
 
     _initialized = true;
@@ -55,8 +61,8 @@ class AuthProvider with ChangeNotifier {
     final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
     await themeProvider.loadTheme();
 
-     final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
-     await syncProvider.loadAutoSyncEnabled();
+    final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+    await syncProvider.loadAutoSyncEnabled();
 
     notifyListeners();
   }

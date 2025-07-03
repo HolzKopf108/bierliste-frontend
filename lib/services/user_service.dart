@@ -1,4 +1,5 @@
 import 'package:bierliste/models/user.dart';
+import 'package:bierliste/providers/auth_provider.dart';
 import 'package:bierliste/services/user_api_service.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
@@ -82,7 +83,12 @@ class UserService {
     await box.delete(_key);
   }
 
-  static Future<String?> deleteAccount() async {
-    return await UserApiService().deleteAccount();
+  static Future<String?> deleteAccount(AuthProvider authProvider) async {
+    final error = await UserApiService().deleteAccount();
+    if (error == null) {
+      await authProvider.logout();
+    }
+
+    return error;
   }
 }

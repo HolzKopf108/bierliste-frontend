@@ -81,6 +81,12 @@ class AuthProvider with ChangeNotifier {
 
     safeGlobalPushNamedAndRemoveUntil('/login');
 
+    final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
+    themeProvider.initialize();
+
+    final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+    syncProvider.initialize();
+
     notifyListeners();
   }
 

@@ -61,6 +61,8 @@ class HttpService {
         response = await http.post(uri, headers: headers, body: jsonEncode(body));
       } else if (method == 'PUT') {
         response = await http.put(uri, headers: headers, body: jsonEncode(body));
+      } else if (method == 'DELETE') {
+        response = await http.delete(uri, headers: headers);
       } else {
         throw UnsupportedError('HTTP-Methode $method nicht unterstützt');
       }

@@ -18,6 +18,10 @@ class SyncProvider with ChangeNotifier {
   bool get isSyncing => _isSyncing;
 
   SyncProvider() {
+    initialize();
+  }
+
+  void initialize() {
     _autoSyncEnabled = true;
     notifyListeners();
     startMonitoring();

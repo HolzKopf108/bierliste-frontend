@@ -140,13 +140,10 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
               onPressed: () async {
                 if (confirmController.text.trim() == 'LÖSCHEN') {
                   Navigator.of(context).pop();
-                  final error = await UserService.deleteAccount();
+                  final error = await UserService.deleteAccount(context.read<AuthProvider>());
                   if (!context.mounted) return;
                   if (error != null) {
                     Toast.show(context, error);
-                  } else {
-                    Toast.show(context, 'Konto erfolgreich gelöscht');
-                    await context.read<AuthProvider>().logout();
                   }
                 } else {
                   Toast.show(context, 'Falsche Eingabe. Bitte „LÖSCHEN“ eingeben.');

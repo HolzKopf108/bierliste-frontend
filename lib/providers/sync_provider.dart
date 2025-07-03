@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:bierliste/services/user_settings_service.dart';
 import 'package:flutter/material.dart';
 import '../services/connectivity_service.dart';
 
@@ -20,8 +21,9 @@ class SyncProvider with ChangeNotifier {
     _initialize();
   }
 
-  void _initialize() {
-    setAutoSyncEnabled(_autoSyncEnabled);
+  void _initialize() async {
+    final loaded = await UserSettingsService.load();
+    setAutoSyncEnabled(loaded?.autoSyncEnabled ?? true);
   }
 
   void setAutoSyncEnabled(bool value) {

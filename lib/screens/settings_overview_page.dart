@@ -1,9 +1,13 @@
 import 'package:bierliste/providers/auth_provider.dart';
+import 'package:bierliste/providers/user_provider.dart';
 import 'package:bierliste/services/user_api_service.dart';
+import 'package:bierliste/services/user_settings_api_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
+import 'package:bierliste/widgets/toast.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import '../providers/sync_provider.dart';
+import 'package:bierliste/services/user_settings_service.dart';
 
 class SettingsOverviewPage extends StatelessWidget {
   const SettingsOverviewPage({super.key});
@@ -43,14 +47,14 @@ class SettingsOverviewPage extends StatelessWidget {
                     final password = controller.text.trim();
                     if (password.isEmpty) return;
 
-                    final success = true; // await verifyPassword(password);
+                    final success = await UserSettingsApiService().verifyPassword(password);
                     if (success && context.mounted) {
                       safePop(context);
                       safePushNamed(context, '/settingsProfil');
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Passwort falsch')),
-                      );
+                      if (!context.mounted) return;
+                      safePop(context);
+                      Toast.show(context, 'Passwort falsch');
                     }
                   },
                 ),
@@ -67,16 +71,45 @@ class SettingsOverviewPage extends StatelessWidget {
     
     await userApiService.logout();
 
+    if (!context.mounted) return;
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
     await authProvider.logout();
+  }
 
-    if (!context.mounted) return;
-    safePushNamedAndRemoveUntil(context, '/');
+  void updateAutoSyncEnabled(BuildContext context, bool newAutoSync) async {
+    final syncProvider = Provider.of<SyncProvider>(context, listen: false);
+    final currentSettings = await UserSettingsService.load();
+    
+    syncProvider.setAutoSyncEnabled(newAutoSync);
+
+    final error = await UserSettingsService.updateSettings(
+      theme: currentSettings?.theme ?? 'system',
+      autoSyncEnabled: newAutoSync,
+    );
+
+    if(error != null) {
+      if(!context.mounted) return;
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Fehler'),
+          content: Text(error),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            )
+          ],
+        ),
+      );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final syncProvider = Provider.of<SyncProvider>(context);
+    final isGoogleUser = context.read<UserProvider>().user?.googleUser ?? false;
 
     return Scaffold(
       appBar: AppBar(
@@ -93,7 +126,11 @@ class SettingsOverviewPage extends StatelessWidget {
             subtitle: const Text('Name, Passwort ändern'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              _showPasswordAuthDialog(context);
+              if (isGoogleUser) {
+                safePushNamed(context, '/settingsProfil');
+              } else {
+                _showPasswordAuthDialog(context);
+              }
             },
           ),
 
@@ -126,9 +163,23 @@ class SettingsOverviewPage extends StatelessWidget {
             },
           ),
 
-          const SizedBox(height: 30),
-          const Divider(indent: 16, endIndent: 16),
+          const SizedBox(height: 20),
+
+          SwitchListTile(
+            title: const Text('Auto-Sync'),
+            subtitle: Text(syncProvider.isAutoSyncEnabled
+                ? 'Online-Modus aktiviert'
+                : 'Offline-Modus aktiviert'),
+            value: syncProvider.isAutoSyncEnabled,
+            onChanged: (value) {
+              updateAutoSyncEnabled(context, value);              
+            },
+            secondary: const Icon(Icons.sync),
+          ),
+
           const SizedBox(height: 35),
+          const Divider(indent: 16, endIndent: 16),
+          const SizedBox(height: 40),
 
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),

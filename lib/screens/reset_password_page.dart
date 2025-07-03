@@ -1,6 +1,6 @@
+import 'package:bierliste/services/user_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
-import 'package:bierliste/services/user_api_service.dart';
 
 class ResetPasswordPage extends StatefulWidget {
   final String email;
@@ -15,7 +15,6 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
   final _formKey = GlobalKey<FormState>();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _apiService = UserApiService();
 
   bool _isPasswordVisible = false;
   bool _isConfirmPasswordVisible = false;
@@ -26,7 +25,7 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
 
     setState(() => _isLoading = true);
 
-    final error = await _apiService.resetPasswordSet(newPassword: _passwordController.text);
+    final error = await UserService.updatePassword(_passwordController.text);
 
     setState(() => _isLoading = false);
 

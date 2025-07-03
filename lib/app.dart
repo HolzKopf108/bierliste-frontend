@@ -1,3 +1,4 @@
+import 'package:bierliste/providers/user_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'providers/sync_provider.dart';
@@ -8,7 +9,6 @@ import 'services/http_service.dart';
 import 'providers/auth_provider.dart';
 import 'main.dart';
 import 'config/app_theme.dart';
-import 'utils/navigation_helper.dart';
 
 class BierlisteApp extends StatelessWidget {
   const BierlisteApp({super.key});
@@ -23,7 +23,6 @@ class BierlisteApp extends StatelessWidget {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       HttpService.onUnauthorized = () {
         authProvider.logout();
-        safeGlobalPushNamedAndRemoveUntil('/login');
       };
 
       syncProvider.onReconnected = () async {
@@ -35,7 +34,6 @@ class BierlisteApp extends StatelessWidget {
           final refreshed = await HttpService.refreshTokens();
           if (!refreshed) {
             await authProvider.logout();
-            safeGlobalPushNamedAndRemoveUntil('/login');
             return;
           }
         }
@@ -50,6 +48,11 @@ class BierlisteApp extends StatelessWidget {
         if (!success) {
           debugPrint("Automatischer Sync fehlgeschlagen");
         }
+      };
+
+      authProvider.onLogoutCallback = () {
+        final userProvider = Provider.of<UserProvider>(navigatorKey.currentContext!, listen: false);
+        userProvider.clearUser();
       };
     });
 

@@ -16,6 +16,9 @@ class AppConfigExample {
   static const String refreshPassword = '/path/to/api';
   static const String resetPassword = '/path/to/api';
 
+  static const String user = '/path/to/api';
   static const String logout = '/path/to/api';
-  static const String resetPasswordSet = '/path/to/api';
+  static const String updatePassword = '/path/to/api';
+  static const String userSettings = '/path/to/api';
+  static const String userVerifyPassword = '/path/to/api';
 }

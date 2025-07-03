@@ -18,16 +18,25 @@ class SyncProvider with ChangeNotifier {
   bool get isSyncing => _isSyncing;
 
   SyncProvider() {
-    _initialize();
+    loadAutoSyncEnabled();
   }
 
-  void _initialize() async {
+  Future<void> loadAutoSyncEnabled() async {
     final loaded = await UserSettingsService.load();
-    setAutoSyncEnabled(loaded?.autoSyncEnabled ?? true);
+    await setAutoSyncEnabled(loaded.autoSyncEnabled);
   }
 
-  void setAutoSyncEnabled(bool value) {
-    _autoSyncEnabled = value;
+  Future<String?> setAutoSyncEnabled(bool value) async {
+    var currentSettings = await UserSettingsService.load();
+
+    final error = await UserSettingsService.updateSettings(
+      theme: currentSettings.theme,
+      autoSyncEnabled: value,
+    );
+
+    currentSettings = await UserSettingsService.load();
+
+    _autoSyncEnabled = currentSettings.autoSyncEnabled;
     notifyListeners();
 
     if (value) {
@@ -35,6 +44,8 @@ class SyncProvider with ChangeNotifier {
     } else {
       stopMonitoring();
     }
+
+    return error;
   }
 
   void setIsSyncing(bool value) {

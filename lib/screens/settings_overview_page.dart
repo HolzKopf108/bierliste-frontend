@@ -7,7 +7,6 @@ import 'package:bierliste/widgets/toast.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/sync_provider.dart';
-import 'package:bierliste/services/user_settings_service.dart';
 
 class SettingsOverviewPage extends StatelessWidget {
   const SettingsOverviewPage({super.key});
@@ -78,14 +77,8 @@ class SettingsOverviewPage extends StatelessWidget {
 
   void updateAutoSyncEnabled(BuildContext context, bool newAutoSync) async {
     final syncProvider = Provider.of<SyncProvider>(context, listen: false);
-    final currentSettings = await UserSettingsService.load();
     
-    syncProvider.setAutoSyncEnabled(newAutoSync);
-
-    final error = await UserSettingsService.updateSettings(
-      theme: currentSettings?.theme ?? 'system',
-      autoSyncEnabled: newAutoSync,
-    );
+    final error = await syncProvider.setAutoSyncEnabled(newAutoSync);
 
     if(error != null) {
       if(!context.mounted) return;

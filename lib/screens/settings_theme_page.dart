@@ -14,7 +14,7 @@ class SettingsThemePage extends StatelessWidget {
 
     await UserSettingsService.updateSettings(
       theme: mode.name,
-      autoSyncEnabled: currentSettings?.autoSyncEnabled ?? true,
+      autoSyncEnabled: currentSettings.autoSyncEnabled,
     );
   }
 

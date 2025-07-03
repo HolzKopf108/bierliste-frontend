@@ -7,7 +7,7 @@ class ThemeProvider extends ChangeNotifier {
 
   Future<void> loadTheme() async {
     final settings = await UserSettingsService.load();
-    final themeString = settings?.theme ?? 'system';
+    final themeString = settings.theme;
 
     _themeMode = ThemeMode.values.firstWhere(
       (mode) => mode.name == themeString,
@@ -24,7 +24,7 @@ class ThemeProvider extends ChangeNotifier {
 
     await UserSettingsService.updateSettings(
       theme: mode.name,
-      autoSyncEnabled: currentSettings?.autoSyncEnabled ?? true,
+      autoSyncEnabled: currentSettings.autoSyncEnabled,
     );
 
     notifyListeners();

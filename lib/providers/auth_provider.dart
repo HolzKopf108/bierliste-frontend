@@ -1,6 +1,9 @@
 import 'package:bierliste/main.dart';
+import 'package:bierliste/providers/sync_provider.dart';
+import 'package:bierliste/providers/theme_provider.dart';
 import 'package:bierliste/providers/user_provider.dart';
 import 'package:bierliste/services/user_service.dart';
+import 'package:bierliste/services/user_settings_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -49,6 +52,12 @@ class AuthProvider with ChangeNotifier {
     final userProvider = Provider.of<UserProvider>(navigatorKey.currentContext!, listen: false);
     await userProvider.loadUser();
 
+    final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
+    await themeProvider.loadTheme();
+
+     final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+     await syncProvider.loadAutoSyncEnabled();
+
     notifyListeners();
   }
 
@@ -58,6 +67,7 @@ class AuthProvider with ChangeNotifier {
     _userEmail = null;
 
     await UserService.clear();
+    await UserSettingsService.clearLocalSettings();
 
     if (onLogoutCallback != null) {
       onLogoutCallback!();

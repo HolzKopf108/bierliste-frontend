@@ -15,16 +15,34 @@ class UserSettingsService {
     }
   }
 
-  static Future<UserSettings?> load() async {
+  static Future<UserSettings> load() async {
     final box = await _openBox();
-    final settings = box.get(_key);
+    var settings = box.get(_key);
+
+    if (settings == null) {
+      final data = await UserSettingsApiService().getUserSettings();
+
+      if (data == null) {
+        return await saveLokalSettings(
+          'system',
+          true,
+          DateTime.now(),
+        );
+      }
+      
+      return await saveLokalSettings(
+        data["theme"], 
+        data["autoSyncEnabled"], 
+        DateTime.parse(data["lastUpdated"])
+      );
+    }
 
     await updateSettings(
-      theme: settings?.theme ?? 'system',
-      autoSyncEnabled: settings?.autoSyncEnabled ?? true,
+      theme: settings.theme,
+      autoSyncEnabled: settings.autoSyncEnabled,
     );
 
-    return box.get(_key);
+    return box.get(_key) ?? await saveLokalSettings(settings.theme, settings.autoSyncEnabled, settings.lastUpdated);
   }
 
   static Future<void> save(UserSettings settings) async {
@@ -42,7 +60,7 @@ class UserSettingsService {
       final response = await UserSettingsApiService().updateSettings(theme, autoSyncEnabled, lastUpdated);
       final body = jsonDecode(response.body);
 
-      saveLokalSettings(
+      await saveLokalSettings(
         body["theme"] ?? theme,
         body["autoSyncEnabled"] ?? autoSyncEnabled,
         body["lastUpdated"] != null ? DateTime.parse(body["lastUpdated"]) : lastUpdated,
@@ -51,12 +69,12 @@ class UserSettingsService {
       return body["error"];
     }
     catch(e) {
-      saveLokalSettings(theme, autoSyncEnabled, lastUpdated);
+      await saveLokalSettings(theme, autoSyncEnabled, lastUpdated);
       return null;
     }
   }
 
-  static void saveLokalSettings(
+  static Future<UserSettings> saveLokalSettings(
     String theme,
     bool autoSyncEnabled,
     DateTime lastUpdated,
@@ -69,6 +87,7 @@ class UserSettingsService {
           ..autoSyncEnabled = autoSyncEnabled
           ..lastUpdated = lastUpdated;
         await settings.save();
+        return settings;
       } else {
         final newSettings = UserSettings(
           theme: theme,
@@ -76,6 +95,12 @@ class UserSettingsService {
           lastUpdated: lastUpdated,
         );
         await box.put(_key, newSettings);
+        return newSettings;
       }
+  }
+
+  static Future<void> clearLocalSettings() async {
+    final box = await _openBox();
+    await box.delete(_key);
   }
 }

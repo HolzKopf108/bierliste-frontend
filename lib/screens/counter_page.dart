@@ -116,6 +116,10 @@ class _CounterPageState extends State<CounterPage> {
     }
   }
 
+  void _updateAutoSyncEnabled(SyncProvider syncProvider) async {
+    await syncProvider.setAutoSyncEnabled(!syncProvider.isAutoSyncEnabled);
+  }
+
   @override
   Widget build(BuildContext context) {
     final syncProvider = context.watch<SyncProvider>();
@@ -137,7 +141,7 @@ class _CounterPageState extends State<CounterPage> {
                   : Icons.sync_disabled,
             ),
             onPressed: () {
-              syncProvider.setAutoSyncEnabled(!syncProvider.isAutoSyncEnabled);
+              _updateAutoSyncEnabled(syncProvider);
             },
             tooltip: syncProvider.isAutoSyncEnabled
                 ? 'Automatische Synchronisation aktiv'

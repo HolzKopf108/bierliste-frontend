@@ -1,5 +1,5 @@
 name: bierliste
-description: "A new Flutter project."
+description: "Bierlisten App."
 publish_to: 'none'
 version: 0.1.0
 
@@ -20,6 +20,8 @@ dependencies:
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.0.3
+  flutter_launcher_icons: ^0.14.4
+  flutter_native_splash: ^2.4.6
 
 dev_dependencies:
   flutter_test:
@@ -32,3 +34,21 @@ flutter:
   uses-material-design: true
   assets:
     - .env
+    - assets/
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/bierliste_icon.png"
+
+flutter_native_splash:
+  color: "#2A2A2A"
+  image: "assets/bierliste_logo_kreis_padding.png"
+  android: true
+  ios: true
+  fullscreen: true
+  
+  android_12:
+    color: "#2A2A2A"
+    image: "assets/bierliste_logo_kreis_padding.png"
+    icon_background_color: "#2A2A2A"

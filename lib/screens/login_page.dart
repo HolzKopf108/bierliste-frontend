@@ -226,6 +226,7 @@ class _LoginPageState extends State<LoginPage> {
                       label: const Text('Mit Apple anmelden'),
                     ),
                   ),
+                  const SizedBox(height: 50),
                 ],
               ),
             ),

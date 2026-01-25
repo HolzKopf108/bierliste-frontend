@@ -174,6 +174,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
                 Navigator.pushNamed(context, '/groupSettings', arguments: 000000000);
               },
             ),
+            const SizedBox(height: 75),
           ],
         ),
       ),

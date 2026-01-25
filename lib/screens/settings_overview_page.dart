@@ -220,7 +220,7 @@ class SettingsOverviewPage extends StatelessWidget {
               onPressed: () => _logout(context),
             ),
           ),
-          const SizedBox(height: 32),
+          const SizedBox(height: 75),
         ],
       ),
     );

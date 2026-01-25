@@ -157,6 +157,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             child: const Text('Registrieren'),
                           ),
                         ),
+                  const SizedBox(height: 50),
                 ],
               ),
             ),

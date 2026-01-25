@@ -95,6 +95,7 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
                         onPressed: _submitEmail,
                         child: const Text('Bestätigen'),
                       ),
+                const SizedBox(height: 50),
               ],
             ),
           ),

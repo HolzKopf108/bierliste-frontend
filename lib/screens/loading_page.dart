@@ -37,10 +37,19 @@ class _LoadingPageState extends State<LoadingPage> {
     _authProvider.removeListener(_authStateChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      safePushReplacementNamed(
-        context,
-        authProvider.isAuthenticated ? '/counter' : '/login',
-      );
+      if (authProvider.isAuthenticated) {
+        safePushReplacementNamed(
+          context,
+          // 'counter',
+          '/groupDetail',
+          arguments: 'Bierfreunde',
+        );
+      } else {
+        safePushReplacementNamed(
+          context,
+          '/login',
+        );
+      }
     });
   }
 

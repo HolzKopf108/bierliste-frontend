@@ -325,7 +325,7 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
               ),
             ),
 
-            const SizedBox(height: 50),
+            const SizedBox(height: 75),
           ],
         ),
       ),

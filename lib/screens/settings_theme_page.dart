@@ -49,6 +49,7 @@ class SettingsThemePage extends StatelessWidget {
             groupValue: currentMode,
             onChanged: (mode) => updateTheme(context, mode!),
           ),
+          const SizedBox(height: 75),
         ],
       ),
     );

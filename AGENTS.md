@@ -50,6 +50,7 @@ Bevor du neue Klassen, Screens, Services, Provider oder Modelle anlegst:
 - Request-/Response-Verarbeitung am bestehenden Backend orientieren
 - Fehlerbehandlung konsistent zur bestehenden App umsetzen
 - Gruppenfunktionen möglichst so anbinden, dass spätere Backend-Integration leicht bleibt
+- Schaue immer in die openapi.json im root Verzeichnis, dort stehen die APIs des Backends drin und wie genau die implementiert sind!
 
 ## UI / Screens
 - Screens schlank halten

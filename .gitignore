@@ -48,3 +48,5 @@ instructions.txt
 lib/config/app_config.dart
 
 .env
+
+openapi.json

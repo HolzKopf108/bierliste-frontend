@@ -30,7 +30,9 @@ class SettingsOverviewPage extends StatelessWidget {
                 decoration: InputDecoration(
                   labelText: 'Aktuelles Passwort',
                   suffixIcon: IconButton(
-                    icon: Icon(isObscured ? Icons.visibility : Icons.visibility_off),
+                    icon: Icon(
+                      isObscured ? Icons.visibility : Icons.visibility_off,
+                    ),
                     onPressed: () => setState(() => isObscured = !isObscured),
                   ),
                 ),
@@ -46,14 +48,19 @@ class SettingsOverviewPage extends StatelessWidget {
                     final password = controller.text.trim();
                     if (password.isEmpty) return;
 
-                    final success = await UserSettingsApiService().verifyPassword(password);
+                    final success = await UserSettingsApiService()
+                        .verifyPassword(password);
                     if (success && context.mounted) {
                       safePop(context);
                       safePushNamed(context, '/settingsProfil');
                     } else {
                       if (!context.mounted) return;
                       safePop(context);
-                      Toast.show(context, 'Passwort falsch');
+                      Toast.show(
+                        context,
+                        'Passwort falsch',
+                        type: ToastType.error,
+                      );
                     }
                   },
                 ),
@@ -80,7 +87,8 @@ class SettingsOverviewPage extends StatelessWidget {
           'Du wirst von deinem Konto abgemeldet.',
           textAlign: TextAlign.center,
         ),
-        actionsAlignment: MainAxisAlignment.center, // <--- zentriert die Buttons!
+        actionsAlignment:
+            MainAxisAlignment.center, // <--- zentriert die Buttons!
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -107,11 +115,11 @@ class SettingsOverviewPage extends StatelessWidget {
 
   void updateAutoSyncEnabled(BuildContext context, bool newAutoSync) async {
     final syncProvider = Provider.of<SyncProvider>(context, listen: false);
-    
+
     final error = await syncProvider.setAutoSyncEnabled(newAutoSync);
 
-    if(error != null) {
-      if(!context.mounted) return;
+    if (error != null) {
+      if (!context.mounted) return;
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -121,7 +129,7 @@ class SettingsOverviewPage extends StatelessWidget {
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('OK'),
-            )
+            ),
           ],
         ),
       );
@@ -135,9 +143,7 @@ class SettingsOverviewPage extends StatelessWidget {
     final isGoogleUser = context.read<UserProvider>().user?.googleUser ?? false;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Einstellungen'),
-      ),
+      appBar: AppBar(title: const Text('Einstellungen')),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
@@ -190,12 +196,14 @@ class SettingsOverviewPage extends StatelessWidget {
 
           SwitchListTile(
             title: const Text('Auto-Sync'),
-            subtitle: Text(syncProvider.isAutoSyncEnabled
-                ? 'Online-Modus aktiviert'
-                : 'Offline-Modus aktiviert'),
+            subtitle: Text(
+              syncProvider.isAutoSyncEnabled
+                  ? 'Online-Modus aktiviert'
+                  : 'Offline-Modus aktiviert',
+            ),
             value: syncProvider.isAutoSyncEnabled,
             onChanged: (value) {
-              updateAutoSyncEnabled(context, value);              
+              updateAutoSyncEnabled(context, value);
             },
             secondary: const Icon(Icons.sync),
           ),

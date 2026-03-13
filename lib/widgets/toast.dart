@@ -1,12 +1,18 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 
+enum ToastType { error, success, info, warning }
+
 class Toast {
   static OverlayEntry? _currentToast;
   static Timer? _toastTimer;
 
-  static void show(BuildContext context, String message) {
-    _removeCurrentToast(); // entfernt bestehenden Toast und Timer
+  static void show(
+    BuildContext context,
+    String message, {
+    ToastType type = ToastType.error,
+  }) {
+    _removeCurrentToast();
 
     final overlay = Overlay.of(context);
     final entry = OverlayEntry(
@@ -14,7 +20,7 @@ class Toast {
         top: MediaQuery.of(context).padding.top + 12,
         left: 16,
         right: 16,
-        child: _ToastWidget(message: message),
+        child: _ToastWidget(message: message, type: type),
       ),
     );
 
@@ -35,11 +41,35 @@ class Toast {
 
 class _ToastWidget extends StatelessWidget {
   final String message;
+  final ToastType type;
 
-  const _ToastWidget({required this.message});
+  const _ToastWidget({required this.message, required this.type});
+
+  ({Color backgroundColor, IconData icon}) _config(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    switch (type) {
+      case ToastType.success:
+        return (
+          backgroundColor: Colors.green.shade600,
+          icon: Icons.check_circle,
+        );
+      case ToastType.info:
+        return (backgroundColor: colorScheme.primary, icon: Icons.info);
+      case ToastType.warning:
+        return (
+          backgroundColor: Colors.orange.shade700,
+          icon: Icons.warning_amber_rounded,
+        );
+      case ToastType.error:
+        return (backgroundColor: colorScheme.error, icon: Icons.error_outline);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final config = _config(context);
+
     return Material(
       color: Colors.transparent,
       child: Dismissible(
@@ -49,15 +79,13 @@ class _ToastWidget extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.red[400],
+            color: config.backgroundColor,
             borderRadius: BorderRadius.circular(8),
-            boxShadow: const [
-              BoxShadow(color: Colors.black26, blurRadius: 6),
-            ],
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
           ),
           child: Row(
             children: [
-              const Icon(Icons.warning, color: Colors.white),
+              Icon(config.icon, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(

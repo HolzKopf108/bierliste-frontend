@@ -21,7 +21,8 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
   final _password1Controller = TextEditingController();
   final _password2Controller = TextEditingController();
 
-  bool get _isGoogleUser => context.read<UserProvider>().user?.googleUser ?? false;
+  bool get _isGoogleUser =>
+      context.read<UserProvider>().user?.googleUser ?? false;
 
   bool _obscurePw1 = true;
   bool _obscurePw2 = true;
@@ -92,10 +93,10 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
       _originalUsername = newUsername;
       _password1Controller.clear();
       _password2Controller.clear();
-      Toast.show(context, 'Profil aktualisiert');
+      Toast.show(context, 'Profil aktualisiert', type: ToastType.success);
       safePop(context);
     } else {
-      Toast.show(context, 'Keine Änderungen vorgenommen');
+      Toast.show(context, 'Keine Änderungen vorgenommen', type: ToastType.info);
     }
   }
 
@@ -140,13 +141,19 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
               onPressed: () async {
                 if (confirmController.text.trim() == 'LÖSCHEN') {
                   Navigator.of(context).pop();
-                  final error = await UserService.deleteAccount(context.read<AuthProvider>());
+                  final error = await UserService.deleteAccount(
+                    context.read<AuthProvider>(),
+                  );
                   if (!context.mounted) return;
                   if (error != null) {
                     Toast.show(context, error);
                   }
                 } else {
-                  Toast.show(context, 'Falsche Eingabe. Bitte „LÖSCHEN“ eingeben.');
+                  Toast.show(
+                    context,
+                    'Falsche Eingabe. Bitte „LÖSCHEN“ eingeben.',
+                    type: ToastType.warning,
+                  );
                 }
               },
             ),
@@ -155,7 +162,6 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
       },
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -205,7 +211,9 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
                 labelText: 'Neues Passwort',
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
-                  icon: Icon(_obscurePw1 ? Icons.visibility : Icons.visibility_off),
+                  icon: Icon(
+                    _obscurePw1 ? Icons.visibility : Icons.visibility_off,
+                  ),
                   onPressed: () => setState(() => _obscurePw1 = !_obscurePw1),
                 ),
               ),
@@ -227,12 +235,15 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
                 labelText: 'Passwort bestätigen',
                 border: const OutlineInputBorder(),
                 suffixIcon: IconButton(
-                  icon: Icon(_obscurePw2 ? Icons.visibility : Icons.visibility_off),
+                  icon: Icon(
+                    _obscurePw2 ? Icons.visibility : Icons.visibility_off,
+                  ),
                   onPressed: () => setState(() => _obscurePw2 = !_obscurePw2),
                 ),
               ),
               validator: (value) {
-                if (_password1Controller.text.isNotEmpty && value != _password1Controller.text) {
+                if (_password1Controller.text.isNotEmpty &&
+                    value != _password1Controller.text) {
                   return 'Passwörter stimmen nicht überein';
                 }
                 return null;
@@ -249,7 +260,10 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
                     )
                   : const Text('Speichern'),
               style: ElevatedButton.styleFrom(
@@ -269,7 +283,10 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
                   padding: EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
                     'Gefahrenbereich',
-                    style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
                 Expanded(child: Divider()),
@@ -279,7 +296,9 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
 
             Container(
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                color: Theme.of(
+                  context,
+                ).colorScheme.error.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: Colors.red),
               ),

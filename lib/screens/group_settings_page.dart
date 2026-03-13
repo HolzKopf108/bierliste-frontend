@@ -1,106 +1,86 @@
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
-import '../utils/money_input_formatter.dart';
+import '../services/group_api_service.dart';
+import '../services/http_service.dart';
 import '../utils/navigation_helper.dart';
+import '../widgets/toast.dart';
 
 class GroupSettingsPage extends StatefulWidget {
   final int groupId;
-  const GroupSettingsPage({Key? key, required this.groupId}) : super(key: key);
+  const GroupSettingsPage({super.key, required this.groupId});
 
   @override
   State<GroupSettingsPage> createState() => _GroupSettingsPageState();
 }
 
 class _GroupSettingsPageState extends State<GroupSettingsPage> {
+  final GroupApiService _groupApiService = GroupApiService();
   final _groupNameController = TextEditingController();
-  final _priceController = TextEditingController();
 
-  bool _onlyManagersCanAddStriche = false;
-  bool _onlyManagersCanDeposit = false;
-  bool _isManager = false;
   bool _isLoading = true;
+  bool _isLeaving = false;
 
   @override
   void initState() {
     super.initState();
-    _loadGroupSettings();
+    _loadGroup();
   }
 
-  Future<void> _loadGroupSettings() async {
-    final url = Uri.parse('https://your.backend.api/groups/${widget.groupId}/settings');
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
+  Future<void> _loadGroup() async {
+    try {
+      final group = await _groupApiService.getGroup(widget.groupId);
+      if (!mounted) return;
       setState(() {
-        _groupNameController.text = data['name'];
-        _priceController.text = data['pricePerStrich'].toString();
-        _onlyManagersCanAddStriche = data['onlyManagersCanAddStriche'];
-        _onlyManagersCanDeposit = data['onlyManagersCanDeposit'];
-        _isManager = data['isManager'];
+        _groupNameController.text = group.name;
         _isLoading = false;
       });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fehler beim Laden der Einstellungen')),
-      );
+    } on UnauthorizedException {
+      if (!mounted) return;
       setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _saveSettings() async {
-    final payload = json.encode({
-      'name': _groupNameController.text.trim(),
-      'pricePerStrich': double.tryParse(_priceController.text.replaceAll(',', '.')) ?? 0.0,
-      'onlyManagersCanAddStriche': _onlyManagersCanAddStriche,
-      'onlyManagersCanDeposit': _onlyManagersCanDeposit,
-    });
-    final url = Uri.parse('https://your.backend.api/groups/${widget.groupId}/settings');
-    final response = await http.put(
-      url,
-      headers: {'Content-Type': 'application/json'},
-      body: payload,
-    );
-
-    if (!mounted) return;
-
-    if (response.statusCode == 200) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Einstellungen gespeichert')),
-      );
-      safePop(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fehler beim Speichern der Einstellungen')),
-      );
+    } on GroupApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      Toast.show(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      Toast.show(context, 'Fehler beim Laden der Gruppe');
     }
   }
 
   Future<void> _leaveGroup() async {
-    final url = Uri.parse('https://your.backend.api/groups/${widget.groupId}/leave');
-    final response = await http.post(url);
+    if (_isLeaving) return;
+    setState(() => _isLeaving = true);
 
-    if (!mounted) return;
-
-    if (response.statusCode == 200) {
-      safePop(context);
-    } else {
+    try {
+      await _groupApiService.leaveGroup(widget.groupId);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Fehler beim Verlassen der Gruppe')),
+        const SnackBar(content: Text('Gruppe erfolgreich verlassen')),
       );
+      safePushNamedAndRemoveUntil(context, '/groups');
+    } on UnauthorizedException {
+      return;
+    } on GroupApiException catch (e) {
+      if (!mounted) return;
+      Toast.show(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      Toast.show(context, 'Fehler beim Verlassen der Gruppe');
+    } finally {
+      if (mounted) {
+        setState(() => _isLeaving = false);
+      }
     }
   }
 
   @override
   void dispose() {
     _groupNameController.dispose();
-    _priceController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(title: const Text('Gruppeneinstellungen')),
@@ -112,62 +92,19 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 1. Gruppenname
           TextField(
             controller: _groupNameController,
-            enabled: _isManager,
+            readOnly: true,
             decoration: const InputDecoration(
               labelText: 'Gruppenname',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 20),
-
-          // 2. Preis pro Strich
-          TextField(
-            controller: _priceController,
-            enabled: _isManager,
-            decoration: const InputDecoration(
-              labelText: 'Preis pro Strich',
-              border: OutlineInputBorder(),
-            ),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [MoneyInputFormatter()],
+          const Text(
+            'Weitere Gruppeneinstellungen sind aktuell im Backend noch nicht verfügbar.',
           ),
-          const SizedBox(height: 20),
-
-          // 3. Striche für andere
-          SwitchListTile(
-            title: const Text('Nur Bierlistenwarte können Striche für andere machen'),
-            value: _onlyManagersCanAddStriche,
-            onChanged: _isManager ? (val) => setState(() => _onlyManagersCanAddStriche = val) : null,
-          ),
-
-          // 4. Geld einzahlen
-          SwitchListTile(
-            title: const Text('Nur Bierlistenwarte können Geld einzahlen'),
-            value: _onlyManagersCanDeposit,
-            onChanged: _isManager ? (val) => setState(() => _onlyManagersCanDeposit = val) : null,
-          ),
-
-          const SizedBox(height: 30),
-
-          // 5. Speichern (immer sichtbar, aber nur aktiv für Manager)
-          ElevatedButton.icon(
-            icon: const Icon(Icons.save),
-            label: const Text('Speichern'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: theme.colorScheme.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              textStyle: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            onPressed: _isManager ? _saveSettings : null,
-          ),
-
           const SizedBox(height: 32),
-
-          // Gruppe verlassen (für alle verfügbar)
           ElevatedButton.icon(
             icon: const Icon(Icons.exit_to_app),
             label: const Text('Gruppe verlassen'),
@@ -177,7 +114,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
               padding: const EdgeInsets.symmetric(vertical: 14),
               textStyle: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            onPressed: _leaveGroup,
+            onPressed: _isLeaving ? null : _leaveGroup,
           ),
         ],
       ),

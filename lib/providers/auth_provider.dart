@@ -27,7 +27,11 @@ class AuthProvider with ChangeNotifier {
 
     if (token != null && refresh != null) {
       if (await ConnectivityService.isOnline()) {
-        _authenticated = await HttpService.refreshTokens();
+        try {
+          _authenticated = await HttpService.refreshTokens();
+        } on TokenRefreshException {
+          _authenticated = true;
+        }
       } else {
         _authenticated = true;
       }
@@ -36,13 +40,22 @@ class AuthProvider with ChangeNotifier {
     }
 
     if (_authenticated) {
-      final userProvider = Provider.of<UserProvider>(navigatorKey.currentContext!, listen: false);
+      final userProvider = Provider.of<UserProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
+      );
       await userProvider.loadUser();
 
-      final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
+      final themeProvider = Provider.of<ThemeProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
+      );
       await themeProvider.loadTheme();
 
-      final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+      final syncProvider = Provider.of<SyncProvider>(
+        navigatorKey.currentContext!,
+        listen: false,
+      );
       await syncProvider.loadAutoSyncEnabled();
     }
 
@@ -50,18 +63,31 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> login(String accessToken, String refreshToken, String userEmail) async {
+  Future<void> login(
+    String accessToken,
+    String refreshToken,
+    String userEmail,
+  ) async {
     await TokenService.saveTokens(accessToken, refreshToken, userEmail);
     _authenticated = true;
     _userEmail = userEmail;
 
-    final userProvider = Provider.of<UserProvider>(navigatorKey.currentContext!, listen: false);
+    final userProvider = Provider.of<UserProvider>(
+      navigatorKey.currentContext!,
+      listen: false,
+    );
     await userProvider.loadUser();
 
-    final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
+    final themeProvider = Provider.of<ThemeProvider>(
+      navigatorKey.currentContext!,
+      listen: false,
+    );
     await themeProvider.loadTheme();
 
-    final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+    final syncProvider = Provider.of<SyncProvider>(
+      navigatorKey.currentContext!,
+      listen: false,
+    );
     await syncProvider.loadAutoSyncEnabled();
 
     notifyListeners();
@@ -81,10 +107,16 @@ class AuthProvider with ChangeNotifier {
 
     safeGlobalPushNamedAndRemoveUntil('/login');
 
-    final themeProvider = Provider.of<ThemeProvider>(navigatorKey.currentContext!, listen: false);
+    final themeProvider = Provider.of<ThemeProvider>(
+      navigatorKey.currentContext!,
+      listen: false,
+    );
     themeProvider.initialize();
 
-    final syncProvider = Provider.of<SyncProvider>(navigatorKey.currentContext!, listen: false);
+    final syncProvider = Provider.of<SyncProvider>(
+      navigatorKey.currentContext!,
+      listen: false,
+    );
     syncProvider.initialize();
 
     notifyListeners();

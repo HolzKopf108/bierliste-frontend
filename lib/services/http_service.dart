@@ -5,6 +5,12 @@ import 'token_service.dart';
 
 class UnauthorizedException implements Exception {}
 
+class TokenRefreshException implements Exception {
+  final String message;
+
+  TokenRefreshException(this.message);
+}
+
 class HttpService {
   static void Function()? onUnauthorized;
 
@@ -24,9 +30,17 @@ class HttpService {
       if (method == 'GET') {
         response = await http.get(uri, headers: headers);
       } else if (method == 'POST') {
-        response = await http.post(uri, headers: headers, body: jsonEncode(body));
+        response = await http.post(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        );
       } else if (method == 'PUT') {
-        response = await http.put(uri, headers: headers, body: jsonEncode(body));
+        response = await http.put(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        );
       } else {
         throw UnsupportedError('HTTP-Methode $method nicht unterstützt');
       }
@@ -58,9 +72,17 @@ class HttpService {
       if (method == 'GET') {
         response = await http.get(uri, headers: headers);
       } else if (method == 'POST') {
-        response = await http.post(uri, headers: headers, body: jsonEncode(body));
+        response = await http.post(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        );
       } else if (method == 'PUT') {
-        response = await http.put(uri, headers: headers, body: jsonEncode(body));
+        response = await http.put(
+          uri,
+          headers: headers,
+          body: jsonEncode(body),
+        );
       } else if (method == 'DELETE') {
         response = await http.delete(uri, headers: headers);
       } else {
@@ -87,11 +109,21 @@ class HttpService {
     final refreshToken = await TokenService.getRefreshToken();
     if (refreshToken == null) return false;
 
-    final response = await http.post(
-      Uri.parse('${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.refresh}'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'refreshToken': refreshToken}),
-    );
+    late final http.Response response;
+
+    try {
+      response = await http.post(
+        Uri.parse(
+          '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.refresh}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': refreshToken}),
+      );
+    } catch (e) {
+      throw TokenRefreshException(
+        'Token-Refresh konnte nicht ausgeführt werden',
+      );
+    }
 
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
@@ -103,7 +135,13 @@ class HttpService {
       return true;
     }
 
-    await TokenService.clearTokens();
-    return false;
+    if (response.statusCode == 401) {
+      await TokenService.clearTokens();
+      return false;
+    }
+
+    throw TokenRefreshException(
+      'Token-Refresh fehlgeschlagen (${response.statusCode})',
+    );
   }
 }

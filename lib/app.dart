@@ -31,7 +31,13 @@ class BierlisteApp extends StatelessWidget {
 
           if (!authProvider.isAuthenticated) return;
 
-          final refreshed = await HttpService.refreshTokens();
+          bool refreshed;
+          try {
+            refreshed = await HttpService.refreshTokens();
+          } on TokenRefreshException {
+            return;
+          }
+
           if (!refreshed) {
             await authProvider.logout();
             return;
@@ -51,7 +57,10 @@ class BierlisteApp extends StatelessWidget {
       };
 
       authProvider.onLogoutCallback = () {
-        final userProvider = Provider.of<UserProvider>(navigatorKey.currentContext!, listen: false);
+        final userProvider = Provider.of<UserProvider>(
+          navigatorKey.currentContext!,
+          listen: false,
+        );
         userProvider.clearUser();
       };
     });
@@ -68,4 +77,3 @@ class BierlisteApp extends StatelessWidget {
     );
   }
 }
-

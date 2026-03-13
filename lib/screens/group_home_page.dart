@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import '../widgets/toast.dart';
+import '../providers/auth_provider.dart';
 import '../utils/navigation_helper.dart';
 
 class GroupHomePage extends StatefulWidget {
+  final int groupId;
   final String groupName;
 
-  const GroupHomePage({super.key, required this.groupName});
+  const GroupHomePage({
+    super.key,
+    required this.groupId,
+    required this.groupName,
+  });
 
   @override
   State<GroupHomePage> createState() => _GroupHomePageState();
@@ -14,7 +21,7 @@ class GroupHomePage extends StatefulWidget {
 
 class _GroupHomePageState extends State<GroupHomePage> {
   int _strichCount = 0;
-  double _pricePerStrich = 1.5;
+  final double _pricePerStrich = 1.5;
 
   void _incrementStrich([int amount = 1]) {
     setState(() {
@@ -39,9 +46,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
                   controller: controller,
                   autofocus: true,
                   keyboardType: TextInputType.number,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.digitsOnly,
-                  ],
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   decoration: InputDecoration(
                     labelText: 'Anzahl',
                     labelStyle: TextStyle(color: Colors.grey[600]),
@@ -66,7 +71,11 @@ class _GroupHomePageState extends State<GroupHomePage> {
     final text = controller.text.trim();
     final value = int.tryParse(text);
     if (value == null || value <= 0) {
-      Toast.show(context, 'Bitte eine gültige Anzahl eingeben');
+      Toast.show(
+        context,
+        'Bitte eine gültige Anzahl eingeben',
+        type: ToastType.warning,
+      );
       return;
     }
     _incrementStrich(value);
@@ -83,10 +92,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
         leading: IconButton(
           icon: const Icon(Icons.group),
           onPressed: () => Navigator.pushNamed(
-                            context,
-                            '/groups',
-                            arguments: widget.groupName,
-                          ),
+            context,
+            '/groups',
+            arguments: widget.groupId,
+          ),
         ),
         actions: [
           IconButton(
@@ -104,7 +113,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
               onPressed: () => _incrementStrich(),
               onLongPress: _showStrichDialog,
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 65),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 38,
+                  horizontal: 65,
+                ),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(16),
                 ),
@@ -116,10 +128,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: 6),
-                  Text(
-                    'Halten für mehrere',
-                    style: TextStyle(fontSize: 14),
-                  ),
+                  Text('Halten für mehrere', style: TextStyle(fontSize: 14)),
                 ],
               ),
             ),
@@ -127,7 +136,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
             Center(
               child: Text(
                 '$_strichCount ${_strichCount == 1 ? 'Strich' : 'Striche'}',
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
             const SizedBox(height: 15),
@@ -144,7 +156,14 @@ class _GroupHomePageState extends State<GroupHomePage> {
               subtitle: const Text('Alle Mitglieder & Striche sehen'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                Navigator.pushNamed(context, '/groupUsers', arguments: widget.groupName);
+                Navigator.pushNamed(
+                  context,
+                  '/groupUsers',
+                  arguments: {
+                    'groupId': widget.groupId,
+                    'groupName': widget.groupName,
+                  },
+                );
               },
             ),
             ListTile(
@@ -153,12 +172,14 @@ class _GroupHomePageState extends State<GroupHomePage> {
               subtitle: const Text('Aktivitäten anzeigen'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
+                final currentUserId =
+                    context.read<AuthProvider>().userEmail ?? '';
                 Navigator.of(context).pushNamed(
                   '/groupActivity',
                   arguments: {
-                    'groupId': "hallo",
+                    'groupId': widget.groupId.toString(),
                     'groupName': widget.groupName,
-                    'currentUserId': "ich",
+                    'currentUserId': currentUserId,
                   },
                 );
               },
@@ -171,7 +192,11 @@ class _GroupHomePageState extends State<GroupHomePage> {
               title: const Text('Gruppeneinstellungen'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
-                Navigator.pushNamed(context, '/groupSettings', arguments: 000000000);
+                Navigator.pushNamed(
+                  context,
+                  '/groupSettings',
+                  arguments: widget.groupId,
+                );
               },
             ),
             const SizedBox(height: 75),

@@ -42,31 +42,64 @@ class AppRoutes {
       case '/settingsProfil':
         return _slide(const SettingsProfilPage());
       case '/groups':
-        return _slide(GroupOverviewPage(previousGroup: settings.arguments as String?));
+        return _slide(
+          GroupOverviewPage(previousGroupId: settings.arguments as int?),
+        );
       case '/groupDetail':
-        return _slide(GroupHomePage(groupName: settings.arguments as String));
-      case '/groupUsers':
-        return _slide(GroupUsersPage(groupName: settings.arguments as String));
-      case '/groupActivity': {
-        final args = settings.arguments as Map<String, String>?;
-
-        if (args == null ||
-            !args.containsKey('groupId') ||
-            !args.containsKey('groupName') ||
-            !args.containsKey('currentUserId')) {
-          return _default(
-            MaterialPageRoute(builder: (_) => const LoadingPage()),
+        {
+          final args = settings.arguments as Map<String, dynamic>?;
+          if (args == null ||
+              args['groupId'] is! int ||
+              args['groupName'] is! String) {
+            return _default(
+              MaterialPageRoute(builder: (_) => const LoadingPage()),
+            );
+          }
+          return _slide(
+            GroupHomePage(
+              groupId: args['groupId'] as int,
+              groupName: args['groupName'] as String,
+            ),
           );
         }
+      case '/groupUsers':
+        {
+          final args = settings.arguments as Map<String, dynamic>?;
+          if (args == null ||
+              args['groupId'] is! int ||
+              args['groupName'] is! String) {
+            return _default(
+              MaterialPageRoute(builder: (_) => const LoadingPage()),
+            );
+          }
+          return _slide(
+            GroupUsersPage(
+              groupId: args['groupId'] as int,
+              groupName: args['groupName'] as String,
+            ),
+          );
+        }
+      case '/groupActivity':
+        {
+          final args = settings.arguments as Map<String, String>?;
 
-        return _slide(
-          GroupActivityPage(
-            groupId: args['groupId']!,
-            groupName: args['groupName']!,
-            currentUserId: args['currentUserId']!,
-          ),
-        );
-      }
+          if (args == null ||
+              !args.containsKey('groupId') ||
+              !args.containsKey('groupName') ||
+              !args.containsKey('currentUserId')) {
+            return _default(
+              MaterialPageRoute(builder: (_) => const LoadingPage()),
+            );
+          }
+
+          return _slide(
+            GroupActivityPage(
+              groupId: args['groupId']!,
+              groupName: args['groupName']!,
+              currentUserId: args['currentUserId']!,
+            ),
+          );
+        }
       case '/groupSettings':
         return _slide(GroupSettingsPage(groupId: settings.arguments as int));
       default:
@@ -81,7 +114,10 @@ class AppRoutes {
         const begin = Offset(1.0, 0.0);
         const end = Offset.zero;
         const curve = Curves.ease;
-        final tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+        final tween = Tween(
+          begin: begin,
+          end: end,
+        ).chain(CurveTween(curve: curve));
         return SlideTransition(position: animation.drive(tween), child: child);
       },
     );

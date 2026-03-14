@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 
 enum ActivityFilter { all, mine }
+
 enum ActivityType {
   strich,
   geld,
@@ -20,10 +21,10 @@ class Activity {
   final ActivityType type;
   final String actorName;
   final String? targetName;
-  final int? count;         // bei Strichen
-  final double? amount;     // bei Geld
-  final double? oldPrice;   // bei Preisänderung
-  final double? newPrice;   // bei Preisänderung
+  final int? count; // bei Strichen
+  final double? amount; // bei Geld
+  final double? oldPrice; // bei Preisänderung
+  final double? newPrice; // bei Preisänderung
   final DateTime timestamp;
 
   Activity({
@@ -72,25 +73,33 @@ class Activity {
       id: json['id'] as String,
       type: type,
       actorName: json['actor']['name'] as String,
-      targetName: json['target'] != null ? json['target']['name'] as String : null,
+      targetName: json['target'] != null
+          ? json['target']['name'] as String
+          : null,
       count: json['count'] != null ? json['count'] as int : null,
-      amount: json['amount'] != null ? (json['amount'] as num).toDouble() : null,
-      oldPrice: json['oldPrice'] != null ? (json['oldPrice'] as num).toDouble() : null,
-      newPrice: json['newPrice'] != null ? (json['newPrice'] as num).toDouble() : null,
+      amount: json['amount'] != null
+          ? (json['amount'] as num).toDouble()
+          : null,
+      oldPrice: json['oldPrice'] != null
+          ? (json['oldPrice'] as num).toDouble()
+          : null,
+      newPrice: json['newPrice'] != null
+          ? (json['newPrice'] as num).toDouble()
+          : null,
       timestamp: DateTime.parse(json['timestamp'] as String),
     );
   }
 }
 
 class GroupActivityPage extends StatefulWidget {
-  final String groupId;
-  final String groupName;
-  final String currentUserId; 
+  final int groupId;
+  final String? groupName;
+  final String currentUserId;
 
   const GroupActivityPage({
     Key? key,
     required this.groupId,
-    required this.groupName,
+    this.groupName,
     required this.currentUserId,
   }) : super(key: key);
 
@@ -132,9 +141,8 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
       AppConfig.activities,
       {
         'offset': _offset.toString(),
-        'limit' : _limit.toString(),
-        if (_filter == ActivityFilter.mine)
-          'actorId': widget.currentUserId,
+        'limit': _limit.toString(),
+        if (_filter == ActivityFilter.mine) 'actorId': widget.currentUserId,
       },
     );
 
@@ -188,13 +196,9 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
           '€ ${act.newPrice?.toStringAsFixed(2)} geändert',
         );
       case ActivityType.joined:
-        return Text(
-          '${act.targetName} ist der Gruppe beigetreten',
-        );
+        return Text('${act.targetName} ist der Gruppe beigetreten');
       case ActivityType.left:
-        return Text(
-          '${act.targetName} hat die Gruppe verlassen',
-        );
+        return Text('${act.targetName} hat die Gruppe verlassen');
     }
   }
 
@@ -208,8 +212,9 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
           IconButton(
             icon: Icon(
               Icons.person,
-              color:
-                  _filter == ActivityFilter.mine ? Colors.white : Colors.white54,
+              color: _filter == ActivityFilter.mine
+                  ? Colors.white
+                  : Colors.white54,
             ),
             tooltip: 'Nur ich',
             onPressed: () {
@@ -220,8 +225,9 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
           IconButton(
             icon: Icon(
               Icons.group,
-              color:
-                  _filter == ActivityFilter.all ? Colors.white : Colors.white54,
+              color: _filter == ActivityFilter.all
+                  ? Colors.white
+                  : Colors.white54,
             ),
             tooltip: 'Alle',
             onPressed: () {

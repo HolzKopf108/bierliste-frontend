@@ -44,10 +44,8 @@ class AppRoutes {
         );
       case '/groupDetail':
         {
-          final args = settings.arguments as Map<String, dynamic>?;
-          if (args == null ||
-              args['groupId'] is! int ||
-              args['groupName'] is! String) {
+          final args = _groupArgs(settings.arguments);
+          if (args == null) {
             return _default(
               MaterialPageRoute(builder: (_) => const LoadingPage()),
             );
@@ -55,16 +53,14 @@ class AppRoutes {
           return _slide(
             GroupHomePage(
               groupId: args['groupId'] as int,
-              groupName: args['groupName'] as String,
+              groupName: args['groupName'] as String?,
             ),
           );
         }
       case '/groupUsers':
         {
-          final args = settings.arguments as Map<String, dynamic>?;
-          if (args == null ||
-              args['groupId'] is! int ||
-              args['groupName'] is! String) {
+          final args = _groupArgs(settings.arguments);
+          if (args == null) {
             return _default(
               MaterialPageRoute(builder: (_) => const LoadingPage()),
             );
@@ -72,17 +68,16 @@ class AppRoutes {
           return _slide(
             GroupUsersPage(
               groupId: args['groupId'] as int,
-              groupName: args['groupName'] as String,
+              groupName: args['groupName'] as String?,
             ),
           );
         }
       case '/groupActivity':
         {
-          final args = settings.arguments as Map<String, String>?;
+          final args = settings.arguments as Map<String, dynamic>?;
 
           if (args == null ||
-              !args.containsKey('groupId') ||
-              !args.containsKey('groupName') ||
+              args['groupId'] is! int ||
               !args.containsKey('currentUserId')) {
             return _default(
               MaterialPageRoute(builder: (_) => const LoadingPage()),
@@ -91,9 +86,9 @@ class AppRoutes {
 
           return _slide(
             GroupActivityPage(
-              groupId: args['groupId']!,
-              groupName: args['groupName']!,
-              currentUserId: args['currentUserId']!,
+              groupId: args['groupId'] as int,
+              groupName: args['groupName'] as String?,
+              currentUserId: args['currentUserId'] as String,
             ),
           );
         }
@@ -121,4 +116,20 @@ class AppRoutes {
   }
 
   static Route _default(Route route) => route;
+
+  static Map<String, dynamic>? _groupArgs(Object? arguments) {
+    if (arguments is int) {
+      return {'groupId': arguments};
+    }
+
+    if (arguments is Map<String, dynamic> && arguments['groupId'] is int) {
+      return {
+        'groupId': arguments['groupId'] as int,
+        if (arguments['groupName'] is String)
+          'groupName': arguments['groupName'] as String,
+      };
+    }
+
+    return null;
+  }
 }

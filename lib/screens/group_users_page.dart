@@ -8,13 +8,9 @@ enum SortOption { alphabet, role }
 
 class GroupUsersPage extends StatefulWidget {
   final int groupId;
-  final String groupName;
+  final String? groupName;
 
-  const GroupUsersPage({
-    super.key,
-    required this.groupId,
-    required this.groupName,
-  });
+  const GroupUsersPage({super.key, required this.groupId, this.groupName});
 
   @override
   State<GroupUsersPage> createState() => _GroupUsersPageState();

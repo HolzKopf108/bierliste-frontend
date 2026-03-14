@@ -12,13 +12,9 @@ import '../utils/navigation_helper.dart';
 
 class GroupHomePage extends StatefulWidget {
   final int groupId;
-  final String groupName;
+  final String? groupName;
 
-  const GroupHomePage({
-    super.key,
-    required this.groupId,
-    required this.groupName,
-  });
+  const GroupHomePage({super.key, required this.groupId, this.groupName});
 
   @override
   State<GroupHomePage> createState() => _GroupHomePageState();
@@ -309,10 +305,13 @@ class _GroupHomePageState extends State<GroupHomePage> {
     final currency = (_strichCount * _pricePerStrich).toStringAsFixed(2);
     final buttonLabel = _isSubmitting ? 'Speichert...' : 'Strich machen';
     final statusText = _buildStatusText(syncProvider);
+    final groupTitle = widget.groupName?.trim().isNotEmpty == true
+        ? widget.groupName!
+        : 'Gruppe ${widget.groupId}';
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.groupName),
+        title: Text(groupTitle),
         leading: IconButton(
           icon: const Icon(Icons.group),
           onPressed: () => Navigator.pushNamed(
@@ -424,7 +423,8 @@ class _GroupHomePageState extends State<GroupHomePage> {
                         '/groupUsers',
                         arguments: {
                           'groupId': widget.groupId,
-                          'groupName': widget.groupName,
+                          if (widget.groupName != null)
+                            'groupName': widget.groupName,
                         },
                       );
                     },
@@ -440,8 +440,9 @@ class _GroupHomePageState extends State<GroupHomePage> {
                       Navigator.of(context).pushNamed(
                         '/groupActivity',
                         arguments: {
-                          'groupId': widget.groupId.toString(),
-                          'groupName': widget.groupName,
+                          'groupId': widget.groupId,
+                          if (widget.groupName != null)
+                            'groupName': widget.groupName,
                           'currentUserId': currentUserId,
                         },
                       );

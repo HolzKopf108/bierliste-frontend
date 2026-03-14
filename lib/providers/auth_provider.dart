@@ -1,4 +1,5 @@
 import 'package:bierliste/main.dart';
+import 'package:bierliste/services/http_service.dart';
 import 'package:bierliste/providers/sync_provider.dart';
 import 'package:bierliste/providers/theme_provider.dart';
 import 'package:bierliste/providers/user_provider.dart';
@@ -8,7 +9,6 @@ import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/token_service.dart';
-import '../services/http_service.dart';
 import '../services/connectivity_service.dart';
 
 class AuthProvider with ChangeNotifier {
@@ -28,16 +28,24 @@ class AuthProvider with ChangeNotifier {
     _userEmail = await TokenService.getUserEmail();
     _authErrorMessage = null;
 
-    if (token != null && refresh != null) {
+    if (refresh != null) {
       if (await ConnectivityService.isOnline()) {
-        try {
-          _authenticated = await HttpService.refreshTokens();
-        } on TokenRefreshException catch (e) {
+        final refreshResult = await HttpService.refreshTokens();
+        if (refreshResult.isSuccess) {
+          _authenticated = true;
+          _userEmail = refreshResult.tokens!.userEmail;
+        } else if (refreshResult.shouldLogout) {
           _authenticated = false;
-          _authErrorMessage = 'Sitzung konnte nicht erneuert werden: $e';
+          _authErrorMessage = refreshResult.message;
+        } else if (refreshResult.isTechnicalFailure) {
+          _authenticated = token != null && token.trim().isNotEmpty;
+          _authErrorMessage = refreshResult.message;
+        } else {
+          _authenticated = false;
+          _authErrorMessage = refreshResult.message;
         }
       } else {
-        _authenticated = true;
+        _authenticated = token != null && token.trim().isNotEmpty;
       }
     } else {
       _authenticated = false;

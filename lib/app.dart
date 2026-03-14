@@ -21,8 +21,8 @@ class BierlisteApp extends StatelessWidget {
     bool refreshCheckedAfterStartup = false;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      HttpService.onUnauthorized = () {
-        authProvider.logout();
+      HttpService.onUnauthorized = (reason) {
+        return authProvider.logout(reason: reason);
       };
 
       syncProvider.onReconnected = () async {
@@ -31,15 +31,13 @@ class BierlisteApp extends StatelessWidget {
 
           if (!authProvider.isAuthenticated) return;
 
-          bool refreshed;
-          try {
-            refreshed = await HttpService.refreshTokens();
-          } on TokenRefreshException {
+          final refreshResult = await HttpService.refreshTokens();
+          if (refreshResult.shouldLogout) {
+            await authProvider.logout(reason: refreshResult.message);
             return;
           }
 
-          if (!refreshed) {
-            await authProvider.logout();
+          if (!refreshResult.isSuccess) {
             return;
           }
         }

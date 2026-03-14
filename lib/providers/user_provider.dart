@@ -14,7 +14,7 @@ class UserProvider with ChangeNotifier {
 
   Future<void> loadUser() async {
     _user = await UserService.load();
-    
+
     if (_user == null) {
       final authProvider = Provider.of<AuthProvider>(
         navigatorKey.currentContext!,
@@ -36,6 +36,6 @@ class UserProvider with ChangeNotifier {
 
   Future<void> updateUsername(String username) async {
     await UserService.updateUsername(username);
-    await loadUser(); 
+    await loadUser();
   }
 }

@@ -1,7 +1,6 @@
-
-
 import 'dart:convert';
 import 'package:bierliste/config/app_config.dart';
+import 'package:bierliste/models/refresh_token_request.dart';
 import 'package:bierliste/services/http_service.dart';
 import 'package:bierliste/services/token_service.dart';
 import 'package:flutter/material.dart';
@@ -17,7 +16,9 @@ class UserApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
-        debugPrint("getUser failed: ${response.statusCode}, body: ${response.body}");
+        debugPrint(
+          "getUser failed: ${response.statusCode}, body: ${response.body}",
+        );
         return null;
       }
     } on UnauthorizedException {
@@ -48,7 +49,9 @@ class UserApiService {
       if (response.statusCode == 200) {
         return json.decode(response.body);
       } else {
-        debugPrint("updateUsername failed: ${response.statusCode}, body: ${response.body}");
+        debugPrint(
+          "updateUsername failed: ${response.statusCode}, body: ${response.body}",
+        );
         return null;
       }
     } on UnauthorizedException {
@@ -93,7 +96,7 @@ class UserApiService {
       await HttpService.authorizedRequest(
         '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.logout}',
         'POST',
-        body: {'refreshToken': refreshToken},
+        body: RefreshTokenRequest(refreshToken: refreshToken).toJson(),
       );
     } catch (e) {
       debugPrint('Logout fehlgeschlagen (ignoriert): $e');
@@ -112,7 +115,7 @@ class UserApiService {
 
       final data = jsonDecode(response.body);
       return data['error'] ?? 'Unbekannter Fehler bei delete account';
-    } catch(e) {
+    } catch (e) {
       return 'Netzwerkfehler';
     }
   }

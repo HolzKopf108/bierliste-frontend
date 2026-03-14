@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../config/app_config.dart';
+import '../models/auth_token_response.dart';
 import 'http_service.dart';
 import '../providers/auth_provider.dart';
 
@@ -14,11 +15,7 @@ class AuthApiService {
       final response = await HttpService.unauthorizedRequest(
         '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.register}',
         'POST',
-        body: {
-          'email': email,
-          'username': username,
-          'password': password,
-        },
+        body: {'email': email, 'username': username, 'password': password},
       );
 
       if (response.statusCode == 200) return null;
@@ -40,19 +37,16 @@ class AuthApiService {
       final response = await HttpService.unauthorizedRequest(
         '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.login}',
         'POST',
-        body: {
-          'email': email,
-          'password': password,
-        },
+        body: {'email': email, 'password': password},
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final accessToken = data['accessToken'];
-        final refreshToken = data['refreshToken'];
-        final userEmail = data['userEmail'] ?? 'unknown';
-
-        await authProvider.login(accessToken, refreshToken, userEmail);
+        final tokens = _parseAuthTokenResponse(response.body);
+        await authProvider.login(
+          tokens.accessToken,
+          tokens.refreshToken,
+          tokens.userEmail,
+        );
         return null;
       } else {
         final body = jsonDecode(response.body);
@@ -64,7 +58,7 @@ class AuthApiService {
     }
   }
 
-  Future<String?> loginGoogle(String idToken, AuthProvider authProvider,) async {
+  Future<String?> loginGoogle(String idToken, AuthProvider authProvider) async {
     try {
       final response = await HttpService.unauthorizedRequest(
         '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.google}',
@@ -73,12 +67,12 @@ class AuthApiService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final accessToken = data['accessToken'];
-        final refreshToken = data['refreshToken'];
-        final userEmail = data['userEmail'] ?? 'unknown';
-
-        await authProvider.login(accessToken, refreshToken, userEmail);
+        final tokens = _parseAuthTokenResponse(response.body);
+        await authProvider.login(
+          tokens.accessToken,
+          tokens.refreshToken,
+          tokens.userEmail,
+        );
         return null;
       } else {
         final body = jsonDecode(response.body);
@@ -99,19 +93,16 @@ class AuthApiService {
       final response = await HttpService.unauthorizedRequest(
         '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.verify}',
         'POST',
-        body: {
-          'email': email,
-          'code': code,
-        },
+        body: {'email': email, 'code': code},
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final accessToken = data['accessToken'];
-        final refreshToken = data['refreshToken'];
-        final userEmail = data['userEmail'] ?? 'unknown';
-
-        await authProvider.login(accessToken, refreshToken, userEmail);
+        final tokens = _parseAuthTokenResponse(response.body);
+        await authProvider.login(
+          tokens.accessToken,
+          tokens.refreshToken,
+          tokens.userEmail,
+        );
         return null;
       } else {
         final body = jsonDecode(response.body);
@@ -175,5 +166,13 @@ class AuthApiService {
       debugPrint('Fehler bei resend: $e');
       return 'Verbindungsfehler';
     }
+  }
+
+  AuthTokenResponse _parseAuthTokenResponse(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Ungültige Auth-Response');
+    }
+    return AuthTokenResponse.fromJson(decoded);
   }
 }

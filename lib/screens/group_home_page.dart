@@ -23,6 +23,7 @@ class GroupHomePage extends StatefulWidget {
 class _GroupHomePageState extends State<GroupHomePage> {
   final GroupCounterApiService _groupCounterApiService =
       GroupCounterApiService();
+  static const _offlineSubmitDelay = Duration(milliseconds: 250);
   int _strichCount = 0;
   int _pendingCount = 0;
   final double _pricePerStrich = 1.5;
@@ -142,6 +143,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
   }
 
   Future<bool> _incrementStrich([int amount = 1]) async {
+    if (_isSubmitting) {
+      return false;
+    }
+
     final authProvider = context.read<AuthProvider>();
     final syncProvider = context.read<SyncProvider>();
     final userEmail = authProvider.userEmail;
@@ -228,6 +233,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
   }
 
   Future<bool> _storeOfflineIncrement(String userEmail, int amount) async {
+    await Future<void>.delayed(_offlineSubmitDelay);
     await OfflineStrichService.addPendingOwnCounterIncrement(
       userEmail,
       widget.groupId,
@@ -249,33 +255,47 @@ class _GroupHomePageState extends State<GroupHomePage> {
     final controller = TextEditingController();
     showDialog(
       context: context,
-      barrierDismissible: true,
+      barrierDismissible: !_isSubmitting,
       builder: (context) {
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: 'Anzahl',
-                    labelStyle: TextStyle(color: Colors.grey[600]),
-                    border: const OutlineInputBorder(),
+        return PopScope(
+          canPop: !_isSubmitting,
+          child: Dialog(
+            insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    enabled: !_isSubmitting,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: 'Anzahl',
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      border: const OutlineInputBorder(),
+                    ),
+                    onSubmitted: _isSubmitting
+                        ? null
+                        : (_) => _handleStrichInput(controller),
                   ),
-                  onSubmitted: (_) => _handleStrichInput(controller),
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton(
-                  onPressed: () => _handleStrichInput(controller),
-                  child: const Text('Hinzufügen'),
-                ),
-              ],
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _isSubmitting
+                        ? null
+                        : () => _handleStrichInput(controller),
+                    child: _isSubmitting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Text('Hinzufügen'),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -368,13 +388,20 @@ class _GroupHomePageState extends State<GroupHomePage> {
                     ),
                     child: Column(
                       children: [
-                        Text(
-                          buttonLabel,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            fontWeight: FontWeight.bold,
+                        if (_isSubmitting)
+                          const SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(strokeWidth: 3),
+                          )
+                        else
+                          Text(
+                            buttonLabel,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        ),
                         const SizedBox(height: 6),
                         Text(
                           _isSubmitting ? 'Bitte warten' : 'Halten für mehrere',

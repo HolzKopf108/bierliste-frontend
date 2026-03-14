@@ -49,7 +49,8 @@ class _LoadingPageState extends State<LoadingPage> {
     _authProvider.removeListener(_authStateChanged);
 
     if (!authProvider.isAuthenticated) {
-      await authProvider.logout();
+      await authProvider.logout(reason: authProvider.authErrorMessage);
+      return;
     }
 
     Map<String, dynamic>? targetGroupArgs;

@@ -8,7 +8,9 @@ import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key});
+  final String? initialErrorMessage;
+
+  const LoginPage({super.key, this.initialErrorMessage});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -20,8 +22,26 @@ class _LoginPageState extends State<LoginPage> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _passwordVisible = false;
+  bool _initialErrorShown = false;
 
   final _apiService = AuthApiService();
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initialErrorShown) return;
+
+    final initialErrorMessage = widget.initialErrorMessage;
+    if (initialErrorMessage == null || initialErrorMessage.trim().isEmpty) {
+      return;
+    }
+
+    _initialErrorShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _showError(initialErrorMessage);
+    });
+  }
 
   void _login() async {
     if (!_formKey.currentState!.validate()) return;
@@ -41,11 +61,13 @@ class _LoginPageState extends State<LoginPage> {
 
     if (error == null) {
       safePushReplacementNamed(context, '/');
-    } 
-    else if (error.contains('Email nicht verifiziert')) {
-      safePushReplacementNamed(context, '/verify', arguments: _emailController.text.trim());
-    }
-    else {
+    } else if (error.contains('Email nicht verifiziert')) {
+      safePushReplacementNamed(
+        context,
+        '/verify',
+        arguments: _emailController.text.trim(),
+      );
+    } else {
       showDialog(
         context: context,
         builder: (_) => AlertDialog(
@@ -55,7 +77,7 @@ class _LoginPageState extends State<LoginPage> {
             TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('OK'),
-            )
+            ),
           ],
         ),
       );
@@ -119,7 +141,7 @@ class _LoginPageState extends State<LoginPage> {
           TextButton(
             onPressed: () => Navigator.pop(context),
             child: const Text('OK'),
-          )
+          ),
         ],
       ),
     );
@@ -150,7 +172,9 @@ class _LoginPageState extends State<LoginPage> {
                       border: OutlineInputBorder(),
                     ),
                     validator: (value) {
-                      if (value == null || value.isEmpty || !value.contains('@')) {
+                      if (value == null ||
+                          value.isEmpty ||
+                          !value.contains('@')) {
                         return 'Bitte gültige Email eingeben';
                       }
                       return null;
@@ -165,7 +189,9 @@ class _LoginPageState extends State<LoginPage> {
                       border: const OutlineInputBorder(),
                       suffixIcon: IconButton(
                         icon: Icon(
-                          _passwordVisible ? Icons.visibility : Icons.visibility_off,
+                          _passwordVisible
+                              ? Icons.visibility
+                              : Icons.visibility_off,
                         ),
                         onPressed: () {
                           setState(() => _passwordVisible = !_passwordVisible);
@@ -182,7 +208,10 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 10),
                   TextButton(
                     onPressed: () {
-                      Navigator.of(context).pushNamed('/forgotPassword', arguments: _emailController.text.trim());
+                      Navigator.of(context).pushNamed(
+                        '/forgotPassword',
+                        arguments: _emailController.text.trim(),
+                      );
                     },
                     child: const Text('Passwort vergessen?'),
                   ),
@@ -193,7 +222,9 @@ class _LoginPageState extends State<LoginPage> {
                           width: double.infinity,
                           child: ElevatedButton(
                             onPressed: _login,
-                            style: ElevatedButton.styleFrom(padding: const EdgeInsets.all(16)),
+                            style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.all(16),
+                            ),
                             child: const Text('Anmelden'),
                           ),
                         ),
@@ -220,7 +251,7 @@ class _LoginPageState extends State<LoginPage> {
                     width: double.infinity,
                     child: OutlinedButton.icon(
                       onPressed: null, // () {
-                        /// _loginApple();
+                      /// _loginApple();
                       //  },
                       icon: const Icon(Icons.apple),
                       label: const Text('Mit Apple anmelden'),

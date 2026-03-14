@@ -15,22 +15,26 @@ class AuthProvider with ChangeNotifier {
   bool _authenticated = false;
   String? _userEmail;
   bool _initialized = false;
+  String? _authErrorMessage;
 
   bool get isAuthenticated => _authenticated;
   String? get userEmail => _userEmail;
   bool get isInitialized => _initialized;
+  String? get authErrorMessage => _authErrorMessage;
 
   Future<void> initialize() async {
     final token = await TokenService.getAccessToken();
     final refresh = await TokenService.getRefreshToken();
     _userEmail = await TokenService.getUserEmail();
+    _authErrorMessage = null;
 
     if (token != null && refresh != null) {
       if (await ConnectivityService.isOnline()) {
         try {
           _authenticated = await HttpService.refreshTokens();
-        } on TokenRefreshException {
-          _authenticated = true;
+        } on TokenRefreshException catch (e) {
+          _authenticated = false;
+          _authErrorMessage = 'Sitzung konnte nicht erneuert werden: $e';
         }
       } else {
         _authenticated = true;
@@ -71,6 +75,7 @@ class AuthProvider with ChangeNotifier {
     await TokenService.saveTokens(accessToken, refreshToken, userEmail);
     _authenticated = true;
     _userEmail = userEmail;
+    _authErrorMessage = null;
 
     final userProvider = Provider.of<UserProvider>(
       navigatorKey.currentContext!,
@@ -93,10 +98,13 @@ class AuthProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> logout() async {
+  Future<void> logout({String? reason}) async {
+    final logoutReason = reason ?? _authErrorMessage;
+
     await TokenService.clearTokens();
     _authenticated = false;
     _userEmail = null;
+    _authErrorMessage = null;
 
     await UserService.clear();
     await UserSettingsService.clearLocalSettings();
@@ -105,7 +113,7 @@ class AuthProvider with ChangeNotifier {
       onLogoutCallback!();
     }
 
-    safeGlobalPushNamedAndRemoveUntil('/login');
+    safeGlobalPushNamedAndRemoveUntil('/login', arguments: logoutReason);
 
     final themeProvider = Provider.of<ThemeProvider>(
       navigatorKey.currentContext!,

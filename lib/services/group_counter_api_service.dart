@@ -37,6 +37,9 @@ class GroupCounterApiService {
       return GroupCounter.fromJson(data);
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('fetchMyGroupCounter Token-Refresh-Fehler: ${e.message}');
+      throw GroupCounterApiException(e.message);
     } on GroupCounterApiException {
       rethrow;
     } catch (e) {
@@ -69,6 +72,9 @@ class GroupCounterApiService {
       return GroupCounter.fromJson(data);
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('incrementMyGroupCounter Token-Refresh-Fehler: ${e.message}');
+      throw GroupCounterApiException(e.message);
     } on GroupCounterApiException {
       rethrow;
     } catch (e) {
@@ -126,6 +132,8 @@ class GroupCounterApiService {
           operationsForGroup.map((operation) => operation.id),
         );
       } on UnauthorizedException {
+        rethrow;
+      } on TokenRefreshException {
         rethrow;
       } on GroupCounterApiException catch (e) {
         allSuccessful = false;

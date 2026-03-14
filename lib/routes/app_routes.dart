@@ -25,7 +25,12 @@ class AppRoutes {
       case '/verify':
         return _slide(VerifyPage(email: settings.arguments as String));
       case '/login':
-        return _default(MaterialPageRoute(builder: (_) => const LoginPage()));
+        return _default(
+          MaterialPageRoute(
+            builder: (_) =>
+                LoginPage(initialErrorMessage: settings.arguments as String?),
+          ),
+        );
       case '/forgotPassword':
         return _slide(ForgotPasswordPage(email: settings.arguments as String));
       case '/passwordVerify':

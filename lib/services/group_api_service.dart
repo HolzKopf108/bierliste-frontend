@@ -39,6 +39,9 @@ class GroupApiService {
           .toList();
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('listGroups Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
     } on GroupApiException {
       rethrow;
     } catch (e) {
@@ -64,6 +67,9 @@ class GroupApiService {
       return Group.fromJson(data);
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('createGroup Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
     } on GroupApiException {
       rethrow;
     } catch (e) {
@@ -88,6 +94,9 @@ class GroupApiService {
       return Group.fromJson(data);
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('getGroup Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
     } on GroupApiException {
       rethrow;
     } catch (e) {
@@ -119,6 +128,9 @@ class GroupApiService {
           .toList();
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('listMembers Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
     } on GroupApiException {
       rethrow;
     } catch (e) {
@@ -136,6 +148,9 @@ class GroupApiService {
       _ensureSuccess(response, 'Beitritt zur Gruppe fehlgeschlagen');
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('joinGroup Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
     } on GroupApiException {
       rethrow;
     } catch (e) {
@@ -153,6 +168,9 @@ class GroupApiService {
       _ensureSuccess(response, 'Gruppe konnte nicht verlassen werden');
     } on UnauthorizedException {
       rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('leaveGroup Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
     } on GroupApiException {
       rethrow;
     } catch (e) {

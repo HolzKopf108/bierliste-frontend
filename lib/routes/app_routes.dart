@@ -4,7 +4,6 @@ import 'package:bierliste/screens/reset_password_page.dart';
 import 'package:flutter/material.dart';
 import '../screens/loading_page.dart';
 import '../screens/login_page.dart';
-import '../screens/counter_page.dart';
 import '../screens/settings_theme_page.dart';
 import '../screens/settings_overview_page.dart';
 import '../screens/group_home_page.dart';
@@ -33,8 +32,6 @@ class AppRoutes {
         return _slide(PasswordVerifyPage(email: settings.arguments as String));
       case '/resetPassword':
         return _slide(ResetPasswordPage(email: settings.arguments as String));
-      case '/counter':
-        return _slide(const CounterPage());
       case '/settings':
         return _slide(const SettingsOverviewPage());
       case '/settingsTheme':

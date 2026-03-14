@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/theme_provider.dart';
 import 'routes/app_routes.dart';
-import 'services/counter_api_service.dart';
+import 'services/group_counter_api_service.dart';
 import 'services/http_service.dart';
 import 'providers/auth_provider.dart';
 import 'main.dart';
@@ -48,11 +48,16 @@ class BierlisteApp extends StatelessWidget {
         if (userEmail == null) return;
 
         syncProvider.setIsSyncing(true);
-        final success = await CounterApiService().syncPendingStriche(userEmail);
-        syncProvider.setIsSyncing(false);
-
-        if (!success) {
-          debugPrint("Automatischer Sync fehlgeschlagen");
+        try {
+          final success = await GroupCounterApiService()
+              .syncPendingCounterOperations(userEmail);
+          if (!success) {
+            debugPrint('Automatischer Counter-Sync fehlgeschlagen');
+          }
+        } on UnauthorizedException {
+          return;
+        } finally {
+          syncProvider.setIsSyncing(false);
         }
       };
 

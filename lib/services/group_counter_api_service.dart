@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'package:bierliste/config/app_config.dart';
 import 'package:bierliste/models/group_counter.dart';
 import 'package:bierliste/models/increment_request.dart';
+import 'package:bierliste/models/pending_counter_operation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 import 'http_service.dart';
+import 'offline_strich_service.dart';
 
 class GroupCounterApiException implements Exception {
   final String message;
@@ -73,6 +75,68 @@ class GroupCounterApiService {
       debugPrint('incrementMyGroupCounter Fehler: $e');
       throw GroupCounterApiException('Netzwerkfehler');
     }
+  }
+
+  Future<bool> syncPendingCounterOperations(
+    String userEmail, {
+    int? groupId,
+  }) async {
+    final operations = await OfflineStrichService.getPendingCounterOperations(
+      userEmail,
+    );
+    final syncableOperations = operations.where((operation) {
+      if (!operation.isSyncableOwnCounterIncrement) {
+        return false;
+      }
+      if (groupId != null && operation.groupId != groupId) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (syncableOperations.isEmpty) {
+      return true;
+    }
+
+    final groupedOperations = <String, List<PendingCounterOperation>>{};
+    for (final operation in syncableOperations) {
+      final key = '${operation.groupId}_${operation.targetUserId ?? 'me'}';
+      groupedOperations.putIfAbsent(key, () => []).add(operation);
+    }
+
+    var allSuccessful = true;
+
+    for (final entry in groupedOperations.entries) {
+      final operationsForGroup = entry.value;
+      final groupId = operationsForGroup.first.groupId;
+      final totalAmount = operationsForGroup.fold<int>(
+        0,
+        (sum, operation) => sum + operation.amount,
+      );
+
+      try {
+        final counter = await incrementMyGroupCounter(groupId, totalAmount);
+        await OfflineStrichService.saveLastOnlineCounter(
+          userEmail,
+          groupId,
+          counter.count,
+        );
+        await OfflineStrichService.removePendingCounterOperations(
+          userEmail,
+          operationsForGroup.map((operation) => operation.id),
+        );
+      } on UnauthorizedException {
+        rethrow;
+      } on GroupCounterApiException catch (e) {
+        allSuccessful = false;
+        debugPrint('syncPendingCounterOperations Fehler: ${e.message}');
+      } catch (e) {
+        allSuccessful = false;
+        debugPrint('syncPendingCounterOperations Fehler: $e');
+      }
+    }
+
+    return allSuccessful;
   }
 
   dynamic _decode(String body) {

@@ -47,6 +47,9 @@ class SyncProvider with ChangeNotifier {
 
     if (value) {
       startMonitoring();
+      if (isAppOnline) {
+        onReconnected?.call();
+      }
     } else {
       stopMonitoring();
     }
@@ -61,7 +64,10 @@ class SyncProvider with ChangeNotifier {
 
   void startMonitoring() {
     _monitorTimer?.cancel();
-    _monitorTimer = Timer.periodic(const Duration(seconds: 20), (_) => _checkOnlineStatus());
+    _monitorTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => _checkOnlineStatus(),
+    );
     _checkOnlineStatus();
   }
 

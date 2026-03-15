@@ -2,9 +2,8 @@ import 'package:flutter/material.dart';
 import '../models/group_member.dart';
 import '../services/group_api_service.dart';
 import '../services/http_service.dart';
-import '../widgets/toast.dart';
 
-enum SortOption { alphabet, role }
+enum SortOption { alphabet, strichCount }
 
 class GroupUsersPage extends StatefulWidget {
   final int groupId;
@@ -21,6 +20,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
   bool _isLoading = true;
+  String? _loadErrorMessage;
 
   @override
   void initState() {
@@ -31,6 +31,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   Future<void> _loadMembers() async {
     setState(() {
       _isLoading = true;
+      _loadErrorMessage = null;
     });
 
     try {
@@ -40,6 +41,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       setState(() {
         _members = members;
         _isLoading = false;
+        _loadErrorMessage = null;
       });
     } on UnauthorizedException {
       if (!mounted) return;
@@ -49,15 +51,17 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     } on GroupApiException catch (e) {
       if (!mounted) return;
       setState(() {
+        _members = [];
         _isLoading = false;
+        _loadErrorMessage = e.message;
       });
-      Toast.show(context, e.message);
     } catch (_) {
       if (!mounted) return;
       setState(() {
+        _members = [];
         _isLoading = false;
+        _loadErrorMessage = 'Mitglieder konnten nicht geladen werden';
       });
-      Toast.show(context, 'Mitglieder konnten nicht geladen werden');
     }
   }
 
@@ -72,21 +76,15 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
 
     sorted.sort((a, b) {
-      if (a.role != b.role) {
-        if (a.role == GroupMemberRole.admin) return -1;
-        if (b.role == GroupMemberRole.admin) return 1;
+      final countCompare = b.strichCount.compareTo(a.strichCount);
+      if (countCompare != 0) {
+        return countCompare;
       }
+
       return a.username.toLowerCase().compareTo(b.username.toLowerCase());
     });
 
     return sorted;
-  }
-
-  String _formatDate(DateTime dateTime) {
-    final day = dateTime.day.toString().padLeft(2, '0');
-    final month = dateTime.month.toString().padLeft(2, '0');
-    final year = dateTime.year.toString();
-    return '$day.$month.$year';
   }
 
   @override
@@ -109,17 +107,39 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
           ),
           IconButton(
             icon: Icon(
-              Icons.verified_user,
-              color: _sortOption == SortOption.role
+              Icons.local_bar,
+              color: _sortOption == SortOption.strichCount
                   ? Colors.white
                   : Colors.white54,
             ),
-            onPressed: () => setState(() => _sortOption = SortOption.role),
+            onPressed: () => setState(
+              () => _sortOption = SortOption.strichCount,
+            ),
           ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
+          : _loadErrorMessage != null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 48),
+                    const SizedBox(height: 16),
+                    Text(_loadErrorMessage!, textAlign: TextAlign.center),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _loadMembers,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Erneut laden'),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : sortedMembers.isEmpty
           ? Center(
               child: Column(
@@ -145,7 +165,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                 separatorBuilder: (_, __) => const SizedBox(height: 12),
                 itemBuilder: (context, index) {
                   final member = sortedMembers[index];
-                  final isAdmin = member.role == GroupMemberRole.admin;
+                  final strichLabel = member.strichCount == 1
+                      ? '1 Strich'
+                      : '${member.strichCount} Striche';
 
                   return Container(
                     padding: const EdgeInsets.all(12),
@@ -175,7 +197,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                'Mitglied seit ${_formatDate(member.joinedAt)}',
+                                strichLabel,
                                 style: const TextStyle(fontSize: 14),
                               ),
                             ],
@@ -184,20 +206,19 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                         Container(
                           margin: const EdgeInsets.only(left: 6),
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
+                            horizontal: 10,
+                            vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: isAdmin
-                                ? primaryColor
-                                : Colors.grey.shade400,
+                            color: primaryColor.withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            member.role.label,
-                            style: const TextStyle(
-                              fontSize: 11,
-                              color: Colors.black,
+                            member.strichCount.toString(),
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: primaryColor,
                             ),
                           ),
                         ),

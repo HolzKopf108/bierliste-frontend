@@ -27,7 +27,7 @@ class GroupHomePage extends StatefulWidget {
 class _GroupHomePageState extends State<GroupHomePage> {
   final GroupCounterApiService _groupCounterApiService =
       GroupCounterApiService();
-  static const _minimumSubmitDuration = Duration(milliseconds: 350);
+  static const _minimumSubmitDuration = Duration(milliseconds: 250);
   int _strichCount = 0;
   final double _pricePerStrich = 1.5;
   bool _isLoading = true;

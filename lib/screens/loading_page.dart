@@ -16,6 +16,7 @@ class LoadingPage extends StatefulWidget {
 class _LoadingPageState extends State<LoadingPage> {
   late final AuthProvider _authProvider;
   final GroupApiService _groupApiService = GroupApiService();
+  bool _isHandlingNavigation = false;
 
   @override
   void initState() {
@@ -44,7 +45,8 @@ class _LoadingPageState extends State<LoadingPage> {
   }
 
   Future<void> _handleNavigation(AuthProvider authProvider) async {
-    if (!mounted) return;
+    if (!mounted || _isHandlingNavigation) return;
+    _isHandlingNavigation = true;
 
     _authProvider.removeListener(_authStateChanged);
 
@@ -59,21 +61,21 @@ class _LoadingPageState extends State<LoadingPage> {
       if (!mounted) return;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (authProvider.isAuthenticated) {
-        if (targetGroupArgs != null) {
-          safePushReplacementNamed(
-            context,
-            '/groupDetail',
-            arguments: targetGroupArgs,
-          );
-        } else {
-          safePushReplacementNamed(context, '/groups');
-        }
+    if (!mounted) return;
+
+    if (authProvider.isAuthenticated) {
+      if (targetGroupArgs != null) {
+        await safePushReplacementNamed(
+          context,
+          '/groupDetail',
+          arguments: targetGroupArgs,
+        );
       } else {
-        safePushReplacementNamed(context, '/login');
+        await safePushReplacementNamed(context, '/groups');
       }
-    });
+    } else {
+      await safePushReplacementNamed(context, '/login');
+    }
   }
 
   Future<Map<String, dynamic>?> _resolveInitialGroup() async {

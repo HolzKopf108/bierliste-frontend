@@ -7,15 +7,8 @@ class UserSettings extends HiveObject {
   @HiveField(0)
   String theme;
 
-  @HiveField(1)
-  bool autoSyncEnabled;
-
   @HiveField(2)
   DateTime lastUpdated;
 
-  UserSettings({
-    required this.theme,
-    required this.autoSyncEnabled,
-    required this.lastUpdated,
-  });
+  UserSettings({required this.theme, required this.lastUpdated});
 }

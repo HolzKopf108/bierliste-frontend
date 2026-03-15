@@ -6,7 +6,6 @@ import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:bierliste/widgets/toast.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../providers/sync_provider.dart';
 
 class SettingsOverviewPage extends StatelessWidget {
   const SettingsOverviewPage({super.key});
@@ -113,33 +112,9 @@ class SettingsOverviewPage extends StatelessWidget {
     await authProvider.logout();
   }
 
-  void updateAutoSyncEnabled(BuildContext context, bool newAutoSync) async {
-    final syncProvider = Provider.of<SyncProvider>(context, listen: false);
-
-    final error = await syncProvider.setAutoSyncEnabled(newAutoSync);
-
-    if (error != null) {
-      if (!context.mounted) return;
-      showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Fehler'),
-          content: Text(error),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('OK'),
-            ),
-          ],
-        ),
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final syncProvider = Provider.of<SyncProvider>(context);
     final isGoogleUser = context.read<UserProvider>().user?.googleUser ?? false;
 
     return Scaffold(
@@ -193,20 +168,6 @@ class SettingsOverviewPage extends StatelessWidget {
           ),
 
           const SizedBox(height: 20),
-
-          SwitchListTile(
-            title: const Text('Auto-Sync'),
-            subtitle: Text(
-              syncProvider.isAutoSyncEnabled
-                  ? 'Online-Modus aktiviert'
-                  : 'Offline-Modus aktiviert',
-            ),
-            value: syncProvider.isAutoSyncEnabled,
-            onChanged: (value) {
-              updateAutoSyncEnabled(context, value);
-            },
-            secondary: const Icon(Icons.sync),
-          ),
 
           const SizedBox(height: 35),
           const Divider(indent: 16, endIndent: 16),

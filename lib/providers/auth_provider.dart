@@ -68,7 +68,8 @@ class AuthProvider with ChangeNotifier {
         navigatorKey.currentContext!,
         listen: false,
       );
-      await syncProvider.loadAutoSyncEnabled();
+      await syncProvider.refreshPendingSyncStatus();
+      await syncProvider.requestSync(refreshPendingStatus: false);
     }
 
     _initialized = true;
@@ -101,7 +102,8 @@ class AuthProvider with ChangeNotifier {
       navigatorKey.currentContext!,
       listen: false,
     );
-    await syncProvider.loadAutoSyncEnabled();
+    await syncProvider.refreshPendingSyncStatus();
+    await syncProvider.requestSync(refreshPendingStatus: false);
 
     notifyListeners();
   }

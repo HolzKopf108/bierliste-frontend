@@ -21,41 +21,32 @@ class UserSettingsService {
     var settings = box.get(_key);
 
     if (settings == null) {
-
       debugPrint('settings sind null');
 
       final data = await UserSettingsApiService().getUserSettings();
 
       if (data == null) {
-
         debugPrint('data ist null');
 
-        return await saveLokalSettings(
-          'system',
-          true,
-          DateTime.now(),
-        );
+        return await saveLokalSettings('system', DateTime.now());
       }
 
       debugPrint('NEUE LOKALE SETTINGS ERSTELLEN');
       debugPrint(data["theme"]);
-      
+
       return await saveLokalSettings(
-        data["theme"], 
-        data["autoSyncEnabled"], 
-        DateTime.parse(data["lastUpdated"])
+        data["theme"],
+        DateTime.parse(data["lastUpdated"]),
       );
     }
 
     debugPrint('settings sind da');
     debugPrint(settings.theme);
 
-    await updateSettings(
-      theme: settings.theme,
-      autoSyncEnabled: settings.autoSyncEnabled,
-    );
+    await updateSettings(theme: settings.theme);
 
-    return box.get(_key) ?? await saveLokalSettings(settings.theme, settings.autoSyncEnabled, settings.lastUpdated);
+    return box.get(_key) ??
+        await saveLokalSettings(settings.theme, settings.lastUpdated);
   }
 
   static Future<void> save(UserSettings settings) async {
@@ -63,53 +54,47 @@ class UserSettingsService {
     await box.put(_key, settings);
   }
 
-  static Future<String?> updateSettings({
-    required String theme,
-    required bool autoSyncEnabled,
-  }) async {
+  static Future<String?> updateSettings({required String theme}) async {
     final lastUpdated = DateTime.now();
 
     try {
-      final response = await UserSettingsApiService().updateSettings(theme, autoSyncEnabled, lastUpdated);
+      final response = await UserSettingsApiService().updateSettings(
+        theme,
+        lastUpdated,
+      );
       final body = jsonDecode(response.body);
 
       await saveLokalSettings(
         body["theme"] ?? theme,
-        body["autoSyncEnabled"] ?? autoSyncEnabled,
-        body["lastUpdated"] != null ? DateTime.parse(body["lastUpdated"]) : lastUpdated,
+        body["lastUpdated"] != null
+            ? DateTime.parse(body["lastUpdated"])
+            : lastUpdated,
       );
 
       return body["error"];
-    }
-    catch(e) {
-      await saveLokalSettings(theme, autoSyncEnabled, lastUpdated);
+    } catch (e) {
+      await saveLokalSettings(theme, lastUpdated);
       return null;
     }
   }
 
   static Future<UserSettings> saveLokalSettings(
     String theme,
-    bool autoSyncEnabled,
     DateTime lastUpdated,
   ) async {
     final box = await _openBox();
     final settings = box.get(_key);
-      if (settings != null) {
-        settings
-          ..theme = theme
-          ..autoSyncEnabled = autoSyncEnabled
-          ..lastUpdated = lastUpdated;
-        await settings.save();
-        return settings;
-      } else {
-        final newSettings = UserSettings(
-          theme: theme,
-          autoSyncEnabled: autoSyncEnabled,
-          lastUpdated: lastUpdated,
-        );
-        await box.put(_key, newSettings);
-        return newSettings;
-      }
+    if (settings != null) {
+      settings
+        ..theme = theme
+        ..lastUpdated = lastUpdated;
+      await settings.save();
+      return settings;
+    } else {
+      final newSettings = UserSettings(theme: theme, lastUpdated: lastUpdated);
+      await box.put(_key, newSettings);
+      return newSettings;
+    }
   }
 
   static Future<void> clearLocalSettings() async {

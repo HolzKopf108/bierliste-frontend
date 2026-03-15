@@ -7,15 +7,17 @@ import 'package:bierliste/services/http_service.dart';
 
 class UserSettingsApiService {
   Future<Map<String, dynamic>?> getUserSettings() async {
-     final response = await HttpService.authorizedRequest(
+    final response = await HttpService.authorizedRequest(
       '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.userSettings}',
       'GET',
-     );
-     
-     if (response.statusCode == 200) {
+    );
+
+    if (response.statusCode == 200) {
       return json.decode(response.body);
     } else {
-      debugPrint("getUserSettigs failed: ${response.statusCode}, body: ${response.body}");
+      debugPrint(
+        "getUserSettigs failed: ${response.statusCode}, body: ${response.body}",
+      );
       return null;
     }
   }
@@ -35,13 +37,15 @@ class UserSettingsApiService {
     return false;
   }
 
-  Future<http.Response> updateSettings(String theme, bool autoSyncEnabled, DateTime lastUpdated) async {
+  Future<http.Response> updateSettings(
+    String theme,
+    DateTime lastUpdated,
+  ) async {
     final response = await HttpService.authorizedRequest(
       '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}${AppConfig.userSettings}',
       'PUT',
       body: {
         'theme': theme,
-        'autoSyncEnabled': autoSyncEnabled,
         'lastUpdated': lastUpdated.toUtc().toIso8601String(),
       },
     );

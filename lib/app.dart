@@ -18,46 +18,26 @@ class BierlisteApp extends StatelessWidget {
     final themeProvider = Provider.of<ThemeProvider>(context);
     final syncProvider = Provider.of<SyncProvider>(context, listen: false);
     final authProvider = Provider.of<AuthProvider>(context, listen: false);
-    bool refreshCheckedAfterStartup = false;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       HttpService.onUnauthorized = (reason) {
         return authProvider.logout(reason: reason);
       };
 
-      syncProvider.onReconnected = () async {
-        if (!refreshCheckedAfterStartup) {
-          refreshCheckedAfterStartup = true;
-
-          if (!authProvider.isAuthenticated) return;
-
-          final refreshResult = await HttpService.refreshTokens();
-          if (refreshResult.shouldLogout) {
-            await authProvider.logout(reason: refreshResult.message);
-            return;
-          }
-
-          if (!refreshResult.isSuccess) {
-            return;
-          }
-        }
-
+      syncProvider.registerSyncHandler(() async {
         final userEmail = authProvider.userEmail;
-        if (userEmail == null) return;
-
-        syncProvider.setIsSyncing(true);
-        try {
-          final success = await GroupCounterApiService()
-              .syncPendingCounterOperations(userEmail);
-          if (!success) {
-            debugPrint('Automatischer Counter-Sync fehlgeschlagen');
-          }
-        } on UnauthorizedException {
-          return;
-        } finally {
-          syncProvider.setIsSyncing(false);
+        if (!authProvider.isAuthenticated || userEmail == null) {
+          return true;
         }
-      };
+
+        try {
+          return await GroupCounterApiService().syncPendingCounterOperations(
+            userEmail,
+          );
+        } on UnauthorizedException {
+          return false;
+        }
+      });
 
       authProvider.onLogoutCallback = () {
         final userProvider = Provider.of<UserProvider>(

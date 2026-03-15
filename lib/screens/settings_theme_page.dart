@@ -1,21 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
-import '../services/user_settings_service.dart';
 
 class SettingsThemePage extends StatelessWidget {
   const SettingsThemePage({super.key});
 
   void updateTheme(BuildContext context, ThemeMode mode) async {
     final provider = Provider.of<ThemeProvider>(context, listen: false);
-
-    final currentSettings = await UserSettingsService.load();
     provider.setTheme(mode);
-
-    await UserSettingsService.updateSettings(
-      theme: mode.name,
-      autoSyncEnabled: currentSettings.autoSyncEnabled,
-    );
   }
 
   @override

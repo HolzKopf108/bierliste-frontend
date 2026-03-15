@@ -18,7 +18,6 @@ class UserSettingsAdapter extends TypeAdapter<UserSettings> {
     };
     return UserSettings(
       theme: fields[0] as String,
-      autoSyncEnabled: fields[1] as bool,
       lastUpdated: fields[2] as DateTime,
     );
   }
@@ -26,11 +25,9 @@ class UserSettingsAdapter extends TypeAdapter<UserSettings> {
   @override
   void write(BinaryWriter writer, UserSettings obj) {
     writer
-      ..writeByte(3)
+      ..writeByte(2)
       ..writeByte(0)
       ..write(obj.theme)
-      ..writeByte(1)
-      ..write(obj.autoSyncEnabled)
       ..writeByte(2)
       ..write(obj.lastUpdated);
   }

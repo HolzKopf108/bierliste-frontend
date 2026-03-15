@@ -23,14 +23,9 @@ class ThemeProvider extends ChangeNotifier {
   }
 
   Future<void> setTheme(ThemeMode mode) async {
-    final currentSettings = await UserSettingsService.load();
-    
     _themeMode = mode;
 
-    await UserSettingsService.updateSettings(
-      theme: mode.name,
-      autoSyncEnabled: currentSettings.autoSyncEnabled,
-    );
+    await UserSettingsService.updateSettings(theme: mode.name);
 
     notifyListeners();
   }

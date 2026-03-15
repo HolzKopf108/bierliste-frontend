@@ -11,6 +11,8 @@ class Toast {
     BuildContext context,
     String message, {
     ToastType type = ToastType.error,
+    String? actionLabel,
+    VoidCallback? onActionTap,
   }) {
     _removeCurrentToast();
 
@@ -20,7 +22,12 @@ class Toast {
         top: MediaQuery.of(context).padding.top + 12,
         left: 16,
         right: 16,
-        child: _ToastWidget(message: message, type: type),
+        child: _ToastWidget(
+          message: message,
+          type: type,
+          actionLabel: actionLabel,
+          onActionTap: onActionTap,
+        ),
       ),
     );
 
@@ -42,8 +49,15 @@ class Toast {
 class _ToastWidget extends StatelessWidget {
   final String message;
   final ToastType type;
+  final String? actionLabel;
+  final VoidCallback? onActionTap;
 
-  const _ToastWidget({required this.message, required this.type});
+  const _ToastWidget({
+    required this.message,
+    required this.type,
+    this.actionLabel,
+    this.onActionTap,
+  });
 
   ({Color backgroundColor, IconData icon}) _config(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -84,6 +98,7 @@ class _ToastWidget extends StatelessWidget {
             boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Icon(config.icon, color: Colors.white),
               const SizedBox(width: 8),
@@ -93,6 +108,19 @@ class _ToastWidget extends StatelessWidget {
                   style: const TextStyle(color: Colors.white),
                 ),
               ),
+              if (actionLabel != null)
+                TextButton(
+                  onPressed: onActionTap,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: Colors.white,
+                    textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(actionLabel!),
+                ),
               GestureDetector(
                 onTap: () => Toast._removeCurrentToast(),
                 child: const Icon(Icons.close, color: Colors.white),

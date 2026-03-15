@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -9,6 +11,8 @@ import '../services/offline_strich_service.dart';
 import '../widgets/toast.dart';
 import '../providers/auth_provider.dart';
 import '../utils/navigation_helper.dart';
+
+enum _StrichSubmitResult { failed, savedPending }
 
 class GroupHomePage extends StatefulWidget {
   final int groupId;
@@ -23,13 +27,11 @@ class GroupHomePage extends StatefulWidget {
 class _GroupHomePageState extends State<GroupHomePage> {
   final GroupCounterApiService _groupCounterApiService =
       GroupCounterApiService();
-  static const _offlineSubmitDelay = Duration(milliseconds: 250);
+  static const _minimumSubmitDuration = Duration(milliseconds: 350);
   int _strichCount = 0;
-  int _pendingCount = 0;
   final double _pricePerStrich = 1.5;
   bool _isLoading = true;
   bool _isSubmitting = false;
-  bool _isShowingOfflineData = false;
   String? _loadErrorMessage;
   SyncProvider? _syncProvider;
   bool _wasOnline = false;
@@ -75,19 +77,26 @@ class _GroupHomePageState extends State<GroupHomePage> {
     _wasSyncing = isSyncing;
 
     if (shouldReload && mounted && !_isLoading && !_isSubmitting) {
-      _loadCounter();
+      _loadCounter(showLoading: false, triggerSync: false);
     }
   }
 
-  Future<void> _loadCounter() async {
+  Future<void> _loadCounter({
+    bool showLoading = true,
+    bool triggerSync = true,
+  }) async {
     final authProvider = context.read<AuthProvider>();
     final syncProvider = context.read<SyncProvider>();
     final userEmail = authProvider.userEmail;
 
-    setState(() {
-      _isLoading = true;
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _loadErrorMessage = null;
+      });
+    } else {
       _loadErrorMessage = null;
-    });
+    }
 
     if (userEmail == null) {
       if (!mounted) return;
@@ -99,11 +108,8 @@ class _GroupHomePageState extends State<GroupHomePage> {
     }
 
     try {
-      if (syncProvider.isAppOnline) {
-        await _groupCounterApiService.syncPendingCounterOperations(
-          userEmail,
-          groupId: widget.groupId,
-        );
+      if (triggerSync && syncProvider.isAppOnline) {
+        unawaited(syncProvider.requestSync());
       }
 
       final counter = await _groupCounterApiService.fetchMyGroupCounter(
@@ -122,9 +128,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
 
       setState(() {
         _strichCount = counter.count + pendingCount;
-        _pendingCount = pendingCount;
         _isLoading = false;
-        _isShowingOfflineData = pendingCount > 0;
         _loadErrorMessage = null;
       });
     } on UnauthorizedException {
@@ -142,9 +146,9 @@ class _GroupHomePageState extends State<GroupHomePage> {
     }
   }
 
-  Future<bool> _incrementStrich([int amount = 1]) async {
+  Future<_StrichSubmitResult> _incrementStrich([int amount = 1]) async {
     if (_isSubmitting) {
-      return false;
+      return _StrichSubmitResult.failed;
     }
 
     final authProvider = context.read<AuthProvider>();
@@ -152,47 +156,23 @@ class _GroupHomePageState extends State<GroupHomePage> {
     final userEmail = authProvider.userEmail;
 
     if (userEmail == null) {
-      return false;
+      return _StrichSubmitResult.failed;
     }
 
     setState(() {
       _isSubmitting = true;
     });
-
-    if (!syncProvider.isAppOnline) {
-      return _storeOfflineIncrement(userEmail, amount);
-    }
+    final startedAt = DateTime.now();
 
     try {
-      final counter = await _groupCounterApiService.incrementMyGroupCounter(
-        widget.groupId,
-        amount,
-      );
-      await OfflineStrichService.saveLastOnlineCounter(
-        userEmail,
-        widget.groupId,
-        counter.count,
-      );
-      if (!mounted) return false;
-
-      setState(() {
-        _strichCount = counter.count;
-        _pendingCount = 0;
-        _isShowingOfflineData = false;
-      });
-      return true;
+      return await _storePendingIncrement(userEmail, amount, syncProvider);
     } on UnauthorizedException {
-      return false;
-    } on GroupCounterApiException catch (e) {
-      if (e.message == 'Netzwerkfehler') {
-        return _storeOfflineIncrement(userEmail, amount);
-      }
-      if (!mounted) return false;
-      Toast.show(context, e.message);
+      return _StrichSubmitResult.failed;
     } catch (_) {
-      if (!mounted) return false;
-      Toast.show(context, 'Gruppen-Counter konnte nicht aktualisiert werden');
+      if (!mounted) return _StrichSubmitResult.failed;
+      Toast.show(context, 'Strich konnte nicht gespeichert werden');
     } finally {
+      await _ensureMinimumSubmitDuration(startedAt);
       if (mounted) {
         setState(() {
           _isSubmitting = false;
@@ -200,7 +180,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
       }
     }
 
-    return false;
+    return _StrichSubmitResult.failed;
   }
 
   Future<void> _loadOfflineCounter(
@@ -219,9 +199,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
 
     setState(() {
       _strichCount = lastOnlineCount + pendingCount;
-      _pendingCount = pendingCount;
       _isLoading = false;
-      _isShowingOfflineData = true;
       _loadErrorMessage = null;
     });
 
@@ -232,23 +210,147 @@ class _GroupHomePageState extends State<GroupHomePage> {
     }
   }
 
-  Future<bool> _storeOfflineIncrement(String userEmail, int amount) async {
-    await Future<void>.delayed(_offlineSubmitDelay);
+  Future<_StrichSubmitResult> _storePendingIncrement(
+    String userEmail,
+    int amount,
+    SyncProvider syncProvider,
+  ) async {
     await OfflineStrichService.addPendingOwnCounterIncrement(
       userEmail,
       widget.groupId,
       amount,
     );
-    if (!mounted) return false;
+    if (!mounted) return _StrichSubmitResult.failed;
 
     setState(() {
       _strichCount += amount;
-      _pendingCount += amount;
-      _isShowingOfflineData = true;
       _loadErrorMessage = null;
     });
-    Toast.show(context, 'Striche offline gespeichert', type: ToastType.warning);
-    return true;
+    _showSavedToast(amount);
+    unawaited(syncProvider.markPendingSync());
+    return _StrichSubmitResult.savedPending;
+  }
+
+  Future<void> _ensureMinimumSubmitDuration(DateTime startedAt) async {
+    final elapsed = DateTime.now().difference(startedAt);
+    final remaining = _minimumSubmitDuration - elapsed;
+    if (remaining > Duration.zero) {
+      await Future<void>.delayed(remaining);
+    }
+  }
+
+  void _showSavedToast(int amount) {
+    final message = switch (amount) {
+      1 => 'Strich gespeichert',
+      _ => '$amount Striche gespeichert',
+    };
+
+    Toast.show(
+      context,
+      message,
+      type: ToastType.success,
+      actionLabel: 'Rückgängig',
+      onActionTap: () {},
+    );
+  }
+
+  Future<void> _handlePendingSyncTap(SyncProvider syncProvider) async {
+    if (!syncProvider.hasPendingSync) {
+      return;
+    }
+
+    if (syncProvider.isSyncing) {
+      Toast.show(
+        context,
+        'Offene Striche werden gerade synchronisiert',
+        type: ToastType.info,
+      );
+      return;
+    }
+
+    Toast.show(
+      context,
+      'Synchronisierung wird gestartet',
+      type: ToastType.info,
+    );
+
+    final success = await syncProvider.requestSync();
+    if (!mounted) return;
+
+    Toast.show(
+      context,
+      success
+          ? 'Offene Striche wurden synchronisiert'
+          : 'Offene Striche konnten gerade nicht synchronisiert werden',
+      type: success ? ToastType.success : ToastType.warning,
+    );
+  }
+
+  Widget _buildPrimaryActionContent() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Opacity(
+          opacity: _isSubmitting ? 0 : 1,
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Strich machen',
+                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 6),
+              Text('Halten für mehrere', style: TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
+        Opacity(
+          opacity: _isSubmitting ? 1 : 0,
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 3),
+              ),
+              SizedBox(height: 6),
+              Text('Bitte warten', style: TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget? _buildPendingSyncAction(SyncProvider syncProvider) {
+    if (!syncProvider.hasPendingSync) {
+      return null;
+    }
+
+    final colorScheme = Theme.of(context).colorScheme;
+    final iconColor = colorScheme.error;
+
+    if (syncProvider.isSyncing) {
+      return IconButton(
+        tooltip: 'Synchronisierung läuft',
+        onPressed: () => _handlePendingSyncTap(syncProvider),
+        icon: SizedBox(
+          width: 20,
+          height: 20,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.2,
+            color: colorScheme.primary,
+          ),
+        ),
+      );
+    }
+
+    return IconButton(
+      tooltip: 'Offene Synchronisierung',
+      onPressed: () => _handlePendingSyncTap(syncProvider),
+      icon: Icon(Icons.sync_problem_rounded, color: iconColor),
+    );
   }
 
   void _showStrichDialog() {
@@ -314,8 +416,8 @@ class _GroupHomePageState extends State<GroupHomePage> {
       );
       return;
     }
-    final success = await _incrementStrich(value);
-    if (!mounted || !success) return;
+    final result = await _incrementStrich(value);
+    if (!mounted || result == _StrichSubmitResult.failed) return;
     safePop(context);
   }
 
@@ -323,11 +425,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
   Widget build(BuildContext context) {
     final syncProvider = context.watch<SyncProvider>();
     final currency = (_strichCount * _pricePerStrich).toStringAsFixed(2);
-    final buttonLabel = _isSubmitting ? 'Speichert...' : 'Strich machen';
-    final statusText = _buildStatusText(syncProvider);
     final groupTitle = widget.groupName?.trim().isNotEmpty == true
         ? widget.groupName!
         : 'Gruppe ${widget.groupId}';
+    final pendingSyncAction = _buildPendingSyncAction(syncProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -341,6 +442,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
           ),
         ),
         actions: [
+          if (pendingSyncAction != null) pendingSyncAction,
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.pushNamed(context, '/settings'),
@@ -375,7 +477,11 @@ class _GroupHomePageState extends State<GroupHomePage> {
                 children: [
                   const SizedBox(height: 75),
                   ElevatedButton(
-                    onPressed: _isSubmitting ? null : () => _incrementStrich(),
+                    onPressed: _isSubmitting
+                        ? null
+                        : () async {
+                            await _incrementStrich();
+                          },
                     onLongPress: _isSubmitting ? null : _showStrichDialog,
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
@@ -386,29 +492,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: Column(
-                      children: [
-                        if (_isSubmitting)
-                          const SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: CircularProgressIndicator(strokeWidth: 3),
-                          )
-                        else
-                          Text(
-                            buttonLabel,
-                            style: const TextStyle(
-                              fontSize: 24,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        const SizedBox(height: 6),
-                        Text(
-                          _isSubmitting ? 'Bitte warten' : 'Halten für mehrere',
-                          style: const TextStyle(fontSize: 14),
-                        ),
-                      ],
-                    ),
+                    child: _buildPrimaryActionContent(),
                   ),
                   const SizedBox(height: 45),
                   Center(
@@ -427,17 +511,6 @@ class _GroupHomePageState extends State<GroupHomePage> {
                       style: const TextStyle(fontSize: 18, color: Colors.grey),
                     ),
                   ),
-                  if (statusText != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      statusText,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                    ),
-                  ],
                   const SizedBox(height: 65),
                   ListTile(
                     leading: const Icon(Icons.people),
@@ -495,29 +568,5 @@ class _GroupHomePageState extends State<GroupHomePage> {
               ),
             ),
     );
-  }
-
-  String? _buildStatusText(SyncProvider syncProvider) {
-    if (_isSubmitting) {
-      return 'Counter wird gespeichert';
-    }
-
-    if (_pendingCount > 0 && syncProvider.isSyncing) {
-      return '$_pendingCount Striche werden synchronisiert';
-    }
-
-    if (_pendingCount > 0 && !syncProvider.isAppOnline) {
-      return '$_pendingCount Striche warten auf Synchronisierung';
-    }
-
-    if (_pendingCount > 0) {
-      return '$_pendingCount lokale Anderungen noch offen';
-    }
-
-    if (_isShowingOfflineData && !syncProvider.isAppOnline) {
-      return 'Offline-Stand aus lokalem Speicher';
-    }
-
-    return null;
   }
 }

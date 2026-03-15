@@ -1,74 +1,82 @@
 import 'dart:async';
-import 'package:bierliste/services/user_settings_service.dart';
+
 import 'package:flutter/material.dart';
+
 import '../services/connectivity_service.dart';
+import '../services/offline_strich_service.dart';
+import '../services/token_service.dart';
 
 class SyncProvider with ChangeNotifier {
-  bool _autoSyncEnabled = true;
+  static const _monitorInterval = Duration(seconds: 10);
+
   bool _actualOnline = false;
   bool _isSyncing = false;
+  bool _hasPendingSync = false;
 
   Timer? _monitorTimer;
+  Future<bool> Function()? _syncHandler;
+  Future<bool>? _syncInFlight;
 
-  void Function()? onReconnected;
-
-  bool get isAppOnline => _autoSyncEnabled && _actualOnline;
+  bool get isAppOnline => _actualOnline;
   bool get isServerOnline => _actualOnline;
-  bool get isAutoSyncEnabled => _autoSyncEnabled;
   bool get isSyncing => _isSyncing;
+  bool get hasPendingSync => _hasPendingSync;
 
   SyncProvider() {
     initialize();
   }
 
   void initialize() {
-    _autoSyncEnabled = true;
+    _actualOnline = false;
+    _isSyncing = false;
+    _hasPendingSync = false;
     notifyListeners();
     startMonitoring();
+    unawaited(refreshPendingSyncStatus());
   }
 
-  Future<void> loadAutoSyncEnabled() async {
-    final loaded = await UserSettingsService.load();
-    await setAutoSyncEnabled(loaded.autoSyncEnabled);
+  void registerSyncHandler(Future<bool> Function() handler) {
+    _syncHandler = handler;
+    unawaited(requestSync());
   }
 
-  Future<String?> setAutoSyncEnabled(bool value) async {
-    var currentSettings = await UserSettingsService.load();
+  Future<void> markPendingSync() async {
+    _setHasPendingSync(true);
+    unawaited(requestSync(refreshPendingStatus: false));
+  }
 
-    final error = await UserSettingsService.updateSettings(
-      theme: currentSettings.theme,
-      autoSyncEnabled: value,
-    );
+  Future<void> refreshPendingSyncStatus() async {
+    final userEmail = await TokenService.getUserEmail();
+    final hasPending =
+        userEmail != null &&
+        await OfflineStrichService.hasPendingCounterOperations(userEmail);
+    _setHasPendingSync(hasPending);
+  }
 
-    currentSettings = await UserSettingsService.load();
-
-    _autoSyncEnabled = currentSettings.autoSyncEnabled;
-    notifyListeners();
-
-    if (value) {
-      startMonitoring();
-      if (isAppOnline) {
-        onReconnected?.call();
-      }
-    } else {
-      stopMonitoring();
+  Future<bool> requestSync({bool refreshPendingStatus = true}) async {
+    if (refreshPendingStatus) {
+      await refreshPendingSyncStatus();
     }
 
-    return error;
-  }
+    await forceCheck();
 
-  void setIsSyncing(bool value) {
-    _isSyncing = value;
-    notifyListeners();
+    if (!_hasPendingSync) {
+      return true;
+    }
+
+    if (!_actualOnline) {
+      return false;
+    }
+
+    return _performSync();
   }
 
   void startMonitoring() {
     _monitorTimer?.cancel();
-    _monitorTimer = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => _checkOnlineStatus(),
-    );
-    _checkOnlineStatus();
+    _monitorTimer = Timer.periodic(_monitorInterval, (_) {
+      unawaited(_runMonitorCycle());
+    });
+    unawaited(_runMonitorCycle());
   }
 
   void stopMonitoring() {
@@ -80,16 +88,81 @@ class SyncProvider with ChangeNotifier {
     await _checkOnlineStatus();
   }
 
+  Future<void> _runMonitorCycle() async {
+    await refreshPendingSyncStatus();
+    await _checkOnlineStatus();
+
+    if (_hasPendingSync && _actualOnline) {
+      await _performSync();
+    }
+  }
+
   Future<void> _checkOnlineStatus() async {
     final isOnline = await ConnectivityService.isOnline();
-    if (isOnline != _actualOnline) {
-      _actualOnline = isOnline;
-      notifyListeners();
+    _setActualOnline(isOnline);
+  }
 
-      if (isAppOnline) {
-        onReconnected?.call();
-      }
+  Future<bool> _performSync() async {
+    if (_syncInFlight != null) {
+      return _syncInFlight!;
     }
+
+    final syncHandler = _syncHandler;
+    if (syncHandler == null) {
+      return false;
+    }
+
+    if (!_hasPendingSync || !_actualOnline) {
+      return !_hasPendingSync;
+    }
+
+    final completer = Completer<bool>();
+    _syncInFlight = completer.future;
+    _setIsSyncing(true);
+
+    try {
+      final success = await syncHandler();
+      await refreshPendingSyncStatus();
+      if (success && _hasPendingSync && _actualOnline) {
+        unawaited(requestSync(refreshPendingStatus: false));
+      }
+      completer.complete(success);
+      return success;
+    } catch (_) {
+      await refreshPendingSyncStatus();
+      completer.complete(false);
+      return false;
+    } finally {
+      _syncInFlight = null;
+      _setIsSyncing(false);
+    }
+  }
+
+  void _setActualOnline(bool value) {
+    if (_actualOnline == value) {
+      return;
+    }
+
+    _actualOnline = value;
+    notifyListeners();
+  }
+
+  void _setHasPendingSync(bool value) {
+    if (_hasPendingSync == value) {
+      return;
+    }
+
+    _hasPendingSync = value;
+    notifyListeners();
+  }
+
+  void _setIsSyncing(bool value) {
+    if (_isSyncing == value) {
+      return;
+    }
+
+    _isSyncing = value;
+    notifyListeners();
   }
 
   @override

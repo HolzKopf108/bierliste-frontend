@@ -29,6 +29,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
   final GroupCounterApiService _groupCounterApiService =
       GroupCounterApiService();
   static const _minimumSubmitDuration = Duration(milliseconds: 250);
+  static const _primaryActionTransitionDuration = Duration(milliseconds: 220);
   int _strichCount = 0;
   final double _pricePerStrich = 1.5;
   bool _isLoading = true;
@@ -296,39 +297,56 @@ class _GroupHomePageState extends State<GroupHomePage> {
   }
 
   Widget _buildPrimaryActionContent() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Opacity(
-          opacity: _isSubmitting ? 0 : 1,
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Strich machen',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+    return SizedBox(
+      height: 64,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          AnimatedSlide(
+            duration: _primaryActionTransitionDuration,
+            curve: Curves.easeOutCubic,
+            offset: _isSubmitting ? const Offset(0, 0.08) : Offset.zero,
+            child: AnimatedOpacity(
+              duration: _primaryActionTransitionDuration,
+              curve: Curves.easeOutCubic,
+              opacity: _isSubmitting ? 0 : 1,
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Strich machen',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  SizedBox(height: 6),
+                  Text('Halten für mehrere', style: TextStyle(fontSize: 14)),
+                ],
               ),
-              SizedBox(height: 6),
-              Text('Halten für mehrere', style: TextStyle(fontSize: 14)),
-            ],
+            ),
           ),
-        ),
-        Opacity(
-          opacity: _isSubmitting ? 1 : 0,
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 3),
+          AnimatedSlide(
+            duration: _primaryActionTransitionDuration,
+            curve: Curves.easeOutCubic,
+            offset: _isSubmitting ? Offset.zero : const Offset(0, -0.08),
+            child: AnimatedOpacity(
+              duration: _primaryActionTransitionDuration,
+              curve: Curves.easeOutCubic,
+              opacity: _isSubmitting ? 1 : 0,
+              child: const Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 28,
+                    height: 28,
+                    child: CircularProgressIndicator(strokeWidth: 3),
+                  ),
+                  SizedBox(height: 6),
+                  Text('Bitte warten', style: TextStyle(fontSize: 14)),
+                ],
               ),
-              SizedBox(height: 6),
-              Text('Bitte warten', style: TextStyle(fontSize: 14)),
-            ],
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -485,23 +503,24 @@ class _GroupHomePageState extends State<GroupHomePage> {
               child: Column(
                 children: [
                   const SizedBox(height: 75),
-                  ElevatedButton(
-                    onPressed: _isSubmitting
-                        ? null
-                        : () async {
-                            await _incrementStrich();
-                          },
-                    onLongPress: _isSubmitting ? null : _showStrichDialog,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 38,
-                        horizontal: 65,
+                  IgnorePointer(
+                    ignoring: _isSubmitting,
+                    child: ElevatedButton(
+                      onPressed: () async {
+                        await _incrementStrich();
+                      },
+                      onLongPress: _showStrichDialog,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 38,
+                          horizontal: 65,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
                       ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                      child: _buildPrimaryActionContent(),
                     ),
-                    child: _buildPrimaryActionContent(),
                   ),
                   const SizedBox(height: 45),
                   Center(

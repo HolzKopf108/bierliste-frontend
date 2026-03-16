@@ -297,6 +297,8 @@ class _GroupHomePageState extends State<GroupHomePage> {
   }
 
   Widget _buildPrimaryActionContent() {
+    final foregroundColor = Theme.of(context).colorScheme.onPrimary;
+
     return SizedBox(
       height: 64,
       child: Stack(
@@ -310,15 +312,22 @@ class _GroupHomePageState extends State<GroupHomePage> {
               duration: _primaryActionTransitionDuration,
               curve: Curves.easeOutCubic,
               opacity: _isSubmitting ? 0 : 1,
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     'Strich machen',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: foregroundColor,
+                    ),
                   ),
                   SizedBox(height: 6),
-                  Text('Halten für mehrere', style: TextStyle(fontSize: 14)),
+                  Text(
+                    'Halten für mehrere',
+                    style: TextStyle(fontSize: 14, color: foregroundColor),
+                  ),
                 ],
               ),
             ),
@@ -331,16 +340,22 @@ class _GroupHomePageState extends State<GroupHomePage> {
               duration: _primaryActionTransitionDuration,
               curve: Curves.easeOutCubic,
               opacity: _isSubmitting ? 1 : 0,
-              child: const Column(
+              child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   SizedBox(
                     width: 28,
                     height: 28,
-                    child: CircularProgressIndicator(strokeWidth: 3),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: foregroundColor,
+                    ),
                   ),
                   SizedBox(height: 6),
-                  Text('Bitte warten', style: TextStyle(fontSize: 14)),
+                  Text(
+                    'Bitte warten',
+                    style: TextStyle(fontSize: 14, color: foregroundColor),
+                  ),
                 ],
               ),
             ),

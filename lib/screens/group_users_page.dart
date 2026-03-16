@@ -1,6 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/group_member.dart';
+import '../providers/auth_provider.dart';
+import '../services/connectivity_service.dart';
 import '../services/group_api_service.dart';
+import '../services/group_member_cache_service.dart';
 import '../services/http_service.dart';
 
 enum SortOption { alphabet, strichCount }
@@ -16,7 +22,6 @@ class GroupUsersPage extends StatefulWidget {
 }
 
 class _GroupUsersPageState extends State<GroupUsersPage> {
-  final GroupApiService _groupApiService = GroupApiService();
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
   bool _isLoading = true;
@@ -29,40 +34,88 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   }
 
   Future<void> _loadMembers() async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+
     setState(() {
       _isLoading = true;
       _loadErrorMessage = null;
     });
 
-    try {
-      final members = await _groupApiService.fetchGroupMembers(widget.groupId);
-      if (!mounted) return;
-
-      setState(() {
-        _members = members;
-        _isLoading = false;
-        _loadErrorMessage = null;
-      });
-    } on UnauthorizedException {
-      if (!mounted) return;
-      setState(() {
-        _isLoading = false;
-      });
-    } on GroupApiException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _members = [];
-        _isLoading = false;
-        _loadErrorMessage = e.message;
-      });
-    } catch (_) {
+    if (userEmail == null) {
       if (!mounted) return;
       setState(() {
         _members = [];
         _isLoading = false;
         _loadErrorMessage = 'Mitglieder konnten nicht geladen werden';
       });
+      return;
     }
+
+    try {
+      if (await ConnectivityService.isOnline()) {
+        final members = await GroupMemberCacheService.refreshGroupMembers(
+          userEmail,
+          widget.groupId,
+        );
+        if (!mounted) return;
+
+        setState(() {
+          _members = members;
+          _isLoading = false;
+          _loadErrorMessage = null;
+        });
+        return;
+      }
+
+      await _loadCachedMembers(
+        userEmail,
+        fallbackErrorMessage: 'Mitglieder konnten nicht geladen werden',
+      );
+    } on UnauthorizedException {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+      });
+    } on GroupApiException catch (e) {
+      await _loadCachedMembers(userEmail, fallbackErrorMessage: e.message);
+    } on TimeoutException {
+      await _loadCachedMembers(
+        userEmail,
+        fallbackErrorMessage: 'Mitglieder konnten nicht geladen werden',
+      );
+    } catch (_) {
+      await _loadCachedMembers(
+        userEmail,
+        fallbackErrorMessage: 'Mitglieder konnten nicht geladen werden',
+      );
+    }
+  }
+
+  Future<void> _loadCachedMembers(
+    String userEmail, {
+    required String fallbackErrorMessage,
+  }) async {
+    final cachedMembers = await GroupMemberCacheService.getGroupMembers(
+      userEmail,
+      widget.groupId,
+    );
+
+    if (!mounted) return;
+
+    if (cachedMembers != null) {
+      setState(() {
+        _members = cachedMembers;
+        _isLoading = false;
+        _loadErrorMessage = null;
+      });
+      return;
+    }
+
+    setState(() {
+      _members = [];
+      _isLoading = false;
+      _loadErrorMessage = fallbackErrorMessage;
+    });
   }
 
   List<GroupMember> _sortedMembers() {

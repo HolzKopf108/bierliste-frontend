@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../routes/app_routes.dart';
 import '../services/group_api_service.dart';
+import '../services/group_member_cache_service.dart';
 import '../services/http_service.dart';
 
 class LoadingPage extends StatefulWidget {
@@ -82,6 +85,16 @@ class _LoadingPageState extends State<LoadingPage> {
   Future<Map<String, dynamic>?> _resolveInitialGroup() async {
     try {
       final groups = await _groupApiService.listGroups();
+      final userEmail = _authProvider.userEmail;
+      if (userEmail != null && groups.isNotEmpty) {
+        unawaited(
+          GroupMemberCacheService.syncGroupMembersInBackground(
+            userEmail,
+            groups.map((group) => group.id),
+          ),
+        );
+      }
+
       if (groups.isEmpty) {
         final prefs = await SharedPreferences.getInstance();
         await prefs.remove('favoriteGroupId');

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/sync_provider.dart';
+import '../routes/app_routes.dart';
 import '../services/group_counter_api_service.dart';
 import '../services/http_service.dart';
 import '../services/offline_strich_service.dart';
@@ -252,6 +253,14 @@ class _GroupHomePageState extends State<GroupHomePage> {
       actionLabel: 'Rückgängig',
       onActionTap: () {},
     );
+  }
+
+  String? _groupNameForArgs() {
+    final groupName = widget.groupName?.trim();
+    if (groupName == null || groupName.isEmpty) {
+      return null;
+    }
+    return groupName;
   }
 
   Future<void> _handlePendingSyncTap(SyncProvider syncProvider) async {
@@ -521,11 +530,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
                       Navigator.pushNamed(
                         context,
                         '/groupUsers',
-                        arguments: {
-                          'groupId': widget.groupId,
-                          if (widget.groupName != null)
-                            'groupName': widget.groupName,
-                        },
+                        arguments: AppRoutes.groupArgs(
+                          widget.groupId,
+                          groupName: _groupNameForArgs(),
+                        ),
                       );
                     },
                   ),
@@ -535,16 +543,25 @@ class _GroupHomePageState extends State<GroupHomePage> {
                     subtitle: const Text('Aktivitäten anzeigen'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      final currentUserId =
-                          context.read<AuthProvider>().userEmail ?? '';
+                      final currentUserId = context
+                          .read<AuthProvider>()
+                          .userEmail
+                          ?.trim();
+                      if (currentUserId == null || currentUserId.isEmpty) {
+                        Toast.show(
+                          context,
+                          'Benutzer konnte nicht geladen werden',
+                        );
+                        return;
+                      }
+
                       Navigator.of(context).pushNamed(
                         '/groupActivity',
-                        arguments: {
-                          'groupId': widget.groupId,
-                          if (widget.groupName != null)
-                            'groupName': widget.groupName,
-                          'currentUserId': currentUserId,
-                        },
+                        arguments: AppRoutes.groupArgs(
+                          widget.groupId,
+                          groupName: _groupNameForArgs(),
+                          extra: {'currentUserId': currentUserId},
+                        ),
                       );
                     },
                   ),

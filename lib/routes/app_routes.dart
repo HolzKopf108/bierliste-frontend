@@ -16,6 +16,26 @@ import '../screens/verify_page.dart';
 import '../screens/forgot_password_page.dart';
 
 class AppRoutes {
+  static Map<String, dynamic> groupArgs(
+    int groupId, {
+    String? groupName,
+    Map<String, dynamic>? extra,
+  }) {
+    Map<String, dynamic>? sanitizedExtra;
+    if (extra != null) {
+      sanitizedExtra = Map<String, dynamic>.from(extra);
+      sanitizedExtra.remove('groupId');
+      sanitizedExtra.remove('groupName');
+    }
+
+    return {
+      'groupId': groupId,
+      if (groupName != null && groupName.trim().isNotEmpty)
+        'groupName': groupName,
+      if (sanitizedExtra != null) ...sanitizedExtra,
+    };
+  }
+
   static Route<dynamic> onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
       case '/':
@@ -79,11 +99,11 @@ class AppRoutes {
         }
       case '/groupActivity':
         {
-          final args = settings.arguments as Map<String, dynamic>?;
+          final args = _groupArgs(settings.arguments);
 
           if (args == null ||
-              args['groupId'] is! int ||
-              !args.containsKey('currentUserId')) {
+              args['currentUserId'] is! String ||
+              (args['currentUserId'] as String).trim().isEmpty) {
             return _default(
               MaterialPageRoute(builder: (_) => const LoadingPage()),
             );
@@ -123,15 +143,14 @@ class AppRoutes {
   static Route _default(Route route) => route;
 
   static Map<String, dynamic>? _groupArgs(Object? arguments) {
-    if (arguments is int) {
-      return {'groupId': arguments};
-    }
-
     if (arguments is Map<String, dynamic> && arguments['groupId'] is int) {
       return {
         'groupId': arguments['groupId'] as int,
         if (arguments['groupName'] is String)
           'groupName': arguments['groupName'] as String,
+        ...Map<String, dynamic>.from(arguments)
+          ..remove('groupId')
+          ..remove('groupName'),
       };
     }
 

@@ -6,6 +6,7 @@ import 'package:animated_list_plus/animated_list_plus.dart';
 import 'package:animated_list_plus/transitions.dart';
 
 import '../models/group.dart';
+import '../routes/app_routes.dart';
 import '../services/group_api_service.dart';
 import '../services/http_service.dart';
 
@@ -257,7 +258,7 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
       safePushNamed(
         context,
         '/groupDetail',
-        arguments: {'groupId': group.id, 'groupName': group.name},
+        arguments: AppRoutes.groupArgs(group.id, groupName: group.name),
       );
     }
   }

@@ -35,7 +35,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     });
 
     try {
-      final members = await _groupApiService.listMembers(widget.groupId);
+      final members = await _groupApiService.fetchGroupMembers(widget.groupId);
       if (!mounted) return;
 
       setState(() {
@@ -112,9 +112,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   ? Colors.white
                   : Colors.white54,
             ),
-            onPressed: () => setState(
-              () => _sortOption = SortOption.strichCount,
-            ),
+            onPressed: () =>
+                setState(() => _sortOption = SortOption.strichCount),
           ),
         ],
       ),

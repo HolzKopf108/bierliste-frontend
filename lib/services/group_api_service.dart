@@ -105,7 +105,7 @@ class GroupApiService {
     }
   }
 
-  Future<List<GroupMember>> listMembers(int groupId) async {
+  Future<List<GroupMember>> fetchGroupMembers(int groupId) async {
     try {
       final response = await HttpService.authorizedRequest(
         '$_groupsBase/$groupId/members',
@@ -122,21 +122,31 @@ class GroupApiService {
         throw GroupApiException('Ungültige Serverantwort');
       }
 
-      return data
-          .whereType<Map<String, dynamic>>()
-          .map(GroupMember.fromJson)
-          .toList();
+      return data.map<GroupMember>((member) {
+        if (member is! Map<String, dynamic>) {
+          throw const FormatException('Ungültiger Gruppenmitglied-Eintrag');
+        }
+
+        return GroupMember.fromJson(member);
+      }).toList();
     } on UnauthorizedException {
       rethrow;
     } on TokenRefreshException catch (e) {
-      debugPrint('listMembers Token-Refresh-Fehler: ${e.message}');
+      debugPrint('fetchGroupMembers Token-Refresh-Fehler: ${e.message}');
       throw GroupApiException(e.message);
+    } on FormatException catch (e) {
+      debugPrint('fetchGroupMembers Parse-Fehler: $e');
+      throw GroupApiException('Ungültige Serverantwort');
     } on GroupApiException {
       rethrow;
     } catch (e) {
-      debugPrint('listMembers Fehler: $e');
+      debugPrint('fetchGroupMembers Fehler: $e');
       throw GroupApiException('Netzwerkfehler');
     }
+  }
+
+  Future<List<GroupMember>> listMembers(int groupId) {
+    return fetchGroupMembers(groupId);
   }
 
   Future<void> joinGroup(int groupId) async {

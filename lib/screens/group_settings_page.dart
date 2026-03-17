@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/offline_group_settings_service.dart';
 import '../services/group_api_service.dart';
+import '../services/group_settings_api_service.dart';
 import '../services/http_service.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/toast.dart';
@@ -39,41 +42,50 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       return;
     }
 
-    final cachedGroup = await OfflineGroupSettingsService.getGroup(
-      userEmail,
-      widget.groupId,
-    );
+    final cachedGroupSettings =
+        await OfflineGroupSettingsService.getGroupSettings(
+          userEmail,
+          widget.groupId,
+        );
     if (!mounted) return;
 
-    if (cachedGroup != null) {
+    if (cachedGroupSettings != null) {
       setState(() {
-        _groupNameController.text = cachedGroup.name;
+        _groupNameController.text = cachedGroupSettings.name;
         _isLoading = false;
       });
     }
 
     try {
-      final group = await OfflineGroupSettingsService.refreshGroup(
-        userEmail,
-        widget.groupId,
-      );
+      final groupSettings =
+          await OfflineGroupSettingsService.refreshGroupSettings(
+            userEmail,
+            widget.groupId,
+          );
       if (!mounted) return;
       setState(() {
-        _groupNameController.text = group.name;
+        _groupNameController.text = groupSettings.name;
         _isLoading = false;
       });
     } on UnauthorizedException {
       if (!mounted) return;
       setState(() => _isLoading = false);
-    } on GroupApiException catch (e) {
-      if (cachedGroup != null) {
+    } on GroupSettingsApiException catch (e) {
+      if (cachedGroupSettings != null) {
         return;
       }
       if (!mounted) return;
       setState(() => _isLoading = false);
       Toast.show(context, e.message);
+    } on TimeoutException {
+      if (cachedGroupSettings != null) {
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      Toast.show(context, 'Gruppeneinstellungen konnten nicht geladen werden');
     } catch (_) {
-      if (cachedGroup != null) {
+      if (cachedGroupSettings != null) {
         return;
       }
       if (!mounted) return;

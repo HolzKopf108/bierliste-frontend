@@ -1,6 +1,7 @@
-import 'package:bierliste/models/group.dart';
-import 'package:bierliste/services/group_api_service.dart';
+import 'package:bierliste/models/group_settings.dart';
 import 'package:hive/hive.dart';
+
+import 'group_settings_api_service.dart';
 
 class OfflineGroupSettingsService {
   static const _boxName = 'group_settings_cache';
@@ -13,12 +14,22 @@ class OfflineGroupSettingsService {
     }
   }
 
-  static Future<void> saveGroup(String userEmail, Group group) async {
+  static Future<void> saveGroupSettings(
+    String userEmail,
+    int groupId,
+    GroupSettings groupSettings,
+  ) async {
     final box = await _openBox();
-    await box.put(_groupSettingsKey(userEmail, group.id), group.toJson());
+    await box.put(
+      _groupSettingsKey(userEmail, groupId),
+      groupSettings.toJson(),
+    );
   }
 
-  static Future<Group?> getGroup(String userEmail, int groupId) async {
+  static Future<GroupSettings?> getGroupSettings(
+    String userEmail,
+    int groupId,
+  ) async {
     final box = await _openBox();
     final rawGroup = box.get(_groupSettingsKey(userEmail, groupId));
     if (rawGroup is! Map) {
@@ -26,17 +37,22 @@ class OfflineGroupSettingsService {
     }
 
     try {
-      return Group.fromJson(Map<String, dynamic>.from(rawGroup));
+      return GroupSettings.fromJson(Map<String, dynamic>.from(rawGroup));
     } catch (_) {
       await box.delete(_groupSettingsKey(userEmail, groupId));
       return null;
     }
   }
 
-  static Future<Group> refreshGroup(String userEmail, int groupId) async {
-    final group = await GroupApiService().getGroup(groupId);
-    await saveGroup(userEmail, group);
-    return group;
+  static Future<GroupSettings> refreshGroupSettings(
+    String userEmail,
+    int groupId,
+  ) async {
+    final groupSettings = await GroupSettingsApiService().fetchGroupSettings(
+      groupId,
+    );
+    await saveGroupSettings(userEmail, groupId, groupSettings);
+    return groupSettings;
   }
 
   static Future<bool> syncPendingOperations(String userEmail) async {

@@ -1,6 +1,7 @@
 import 'package:bierliste/providers/user_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'providers/group_role_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/theme_provider.dart';
 import 'routes/app_routes.dart';
@@ -44,7 +45,12 @@ class BierlisteApp extends StatelessWidget {
           navigatorKey.currentContext!,
           listen: false,
         );
+        final groupRoleProvider = Provider.of<GroupRoleProvider>(
+          navigatorKey.currentContext!,
+          listen: false,
+        );
         userProvider.clearUser();
+        groupRoleProvider.clear();
       };
     });
 

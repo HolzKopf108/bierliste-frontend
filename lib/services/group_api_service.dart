@@ -149,6 +149,33 @@ class GroupApiService {
     return fetchGroupMembers(groupId);
   }
 
+  Future<GroupMemberRole> fetchOwnGroupRole(int groupId) async {
+    try {
+      final response = await HttpService.authorizedRequest(
+        '$_groupsBase/$groupId/me/role',
+        'GET',
+      );
+      _ensureSuccess(response, 'Rolle konnte nicht geladen werden');
+
+      final data = _decode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw GroupApiException('Ungültige Serverantwort');
+      }
+
+      return GroupMemberRole.fromJsonValue(data['role']);
+    } on UnauthorizedException {
+      rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('fetchOwnGroupRole Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
+    } on GroupApiException {
+      rethrow;
+    } catch (e) {
+      debugPrint('fetchOwnGroupRole Fehler: $e');
+      throw GroupApiException('Netzwerkfehler');
+    }
+  }
+
   Future<void> joinGroup(int groupId) async {
     try {
       final response = await HttpService.authorizedRequest(

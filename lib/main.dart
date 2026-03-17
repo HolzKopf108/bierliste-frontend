@@ -1,4 +1,5 @@
 import 'package:bierliste/models/user.dart';
+import 'package:bierliste/providers/group_role_provider.dart';
 import 'package:bierliste/providers/user_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -31,6 +32,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => SyncProvider()),
         ChangeNotifierProvider(create: (_) => UserProvider()),
+        ChangeNotifierProvider(create: (_) => GroupRoleProvider()),
         Provider(create: (_) => ConnectivityService()),
       ],
       child: const BierlisteApp(),

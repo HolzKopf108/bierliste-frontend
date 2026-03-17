@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/group_member.dart';
 import '../providers/auth_provider.dart';
+import '../providers/group_role_provider.dart';
 import '../services/connectivity_service.dart';
 import '../services/group_api_service.dart';
 import '../services/group_member_cache_service.dart';
@@ -35,6 +36,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
   Future<void> _loadMembers() async {
     final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
 
     setState(() {
       _isLoading = true;
@@ -50,6 +52,25 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       });
       return;
     }
+
+    final cachedMembers = await GroupMemberCacheService.getGroupMembers(
+      userEmail,
+      widget.groupId,
+    );
+
+    if (!mounted) return;
+
+    if (cachedMembers != null) {
+      setState(() {
+        _members = cachedMembers;
+        _isLoading = false;
+        _loadErrorMessage = null;
+      });
+    }
+
+    unawaited(
+      groupRoleProvider.loadRole(userEmail, widget.groupId, forceRefresh: true),
+    );
 
     try {
       if (await ConnectivityService.isOnline()) {
@@ -67,6 +88,10 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         return;
       }
 
+      if (cachedMembers != null) {
+        return;
+      }
+
       await _loadCachedMembers(
         userEmail,
         fallbackErrorMessage: 'Mitglieder konnten nicht geladen werden',
@@ -77,13 +102,22 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         _isLoading = false;
       });
     } on GroupApiException catch (e) {
+      if (cachedMembers != null) {
+        return;
+      }
       await _loadCachedMembers(userEmail, fallbackErrorMessage: e.message);
     } on TimeoutException {
+      if (cachedMembers != null) {
+        return;
+      }
       await _loadCachedMembers(
         userEmail,
         fallbackErrorMessage: 'Mitglieder konnten nicht geladen werden',
       );
     } catch (_) {
+      if (cachedMembers != null) {
+        return;
+      }
       await _loadCachedMembers(
         userEmail,
         fallbackErrorMessage: 'Mitglieder konnten nicht geladen werden',

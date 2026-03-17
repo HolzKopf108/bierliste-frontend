@@ -288,7 +288,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     if (syncProvider.isSyncing) {
       Toast.show(
         context,
-        'Offene Striche werden gerade synchronisiert',
+        'Offene Änderungen werden gerade synchronisiert',
         type: ToastType.info,
       );
       return;
@@ -306,8 +306,8 @@ class _GroupHomePageState extends State<GroupHomePage> {
     Toast.show(
       context,
       success
-          ? 'Offene Striche wurden synchronisiert'
-          : 'Offene Striche konnten gerade nicht synchronisiert werden',
+          ? 'Offene Änderungen wurden synchronisiert'
+          : 'Offene Änderungen konnten gerade nicht synchronisiert werden',
       type: success ? ToastType.success : ToastType.warning,
     );
   }
@@ -391,7 +391,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
 
     if (syncProvider.isSyncing) {
       return IconButton(
-        tooltip: 'Synchronisierung läuft',
+        tooltip: 'Synchronisierung offener Änderungen läuft',
         onPressed: () => _handlePendingSyncTap(syncProvider),
         icon: SizedBox(
           width: 20,
@@ -405,7 +405,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     }
 
     return IconButton(
-      tooltip: 'Offene Synchronisierung',
+      tooltip: 'Offene Änderungen synchronisieren',
       onPressed: () => _handlePendingSyncTap(syncProvider),
       icon: Icon(Icons.sync_problem_rounded, color: iconColor),
     );

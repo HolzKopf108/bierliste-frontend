@@ -1,7 +1,27 @@
+import 'dart:async';
+
 import 'package:bierliste/models/group_settings.dart';
+import 'package:bierliste/models/pending_sync_operation.dart';
+import 'package:bierliste/services/connectivity_service.dart';
+import 'package:bierliste/services/http_service.dart';
+import 'package:bierliste/services/pending_sync_queue_service.dart';
 import 'package:hive/hive.dart';
 
 import 'group_settings_api_service.dart';
+
+class OfflineGroupSettingsActionResult {
+  final GroupSettings groupSettings;
+  final bool hasPendingSync;
+  final bool shouldReloadUi;
+  final String? errorMessage;
+
+  const OfflineGroupSettingsActionResult({
+    required this.groupSettings,
+    required this.hasPendingSync,
+    this.shouldReloadUi = false,
+    this.errorMessage,
+  });
+}
 
 class OfflineGroupSettingsService {
   static const _boxName = 'group_settings_cache';
@@ -55,24 +75,243 @@ class OfflineGroupSettingsService {
     return groupSettings;
   }
 
-  static Future<GroupSettings> updateGroupSettings(
+  static Future<OfflineGroupSettingsActionResult> updateGroupSettings(
     String userEmail,
     int groupId,
     GroupSettings payload,
   ) async {
-    final groupSettings = await GroupSettingsApiService().updateGroupSettings(
-      groupId,
-      payload,
-    );
-    await saveGroupSettings(userEmail, groupId, groupSettings);
-    return groupSettings;
+    await saveGroupSettings(userEmail, groupId, payload);
+    final operation = await _queueSettingsUpdate(userEmail, groupId, payload);
+
+    if (!await ConnectivityService.isOnline()) {
+      return OfflineGroupSettingsActionResult(
+        groupSettings: payload,
+        hasPendingSync: true,
+      );
+    }
+
+    try {
+      final groupSettings = await GroupSettingsApiService().updateGroupSettings(
+        groupId,
+        payload,
+      );
+      await saveGroupSettings(userEmail, groupId, groupSettings);
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      return OfflineGroupSettingsActionResult(
+        groupSettings: groupSettings,
+        hasPendingSync: false,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } on GroupSettingsApiException catch (e) {
+      if (_isPermanentFailure(e.statusCode)) {
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          operation.id,
+        ]);
+        final currentSettings = await _refreshOrGetCached(
+          userEmail,
+          groupId,
+          fallback: payload,
+        );
+        return OfflineGroupSettingsActionResult(
+          groupSettings: currentSettings,
+          hasPendingSync: false,
+          shouldReloadUi: _shouldReloadUi(e.statusCode),
+          errorMessage: _friendlyActionError(
+            e,
+            'Gruppeneinstellungen konnten nicht gespeichert werden',
+          ),
+        );
+      }
+
+      return OfflineGroupSettingsActionResult(
+        groupSettings: payload,
+        hasPendingSync: true,
+      );
+    } on TimeoutException {
+      return OfflineGroupSettingsActionResult(
+        groupSettings: payload,
+        hasPendingSync: true,
+      );
+    } catch (_) {
+      return OfflineGroupSettingsActionResult(
+        groupSettings: payload,
+        hasPendingSync: true,
+      );
+    }
   }
 
-  static Future<bool> syncPendingOperations(String userEmail) async {
-    return true;
+  static Future<bool> syncPendingOperations(
+    String userEmail, {
+    int? groupId,
+  }) async {
+    final allOperations = await PendingSyncQueueService.getOperations(
+      userEmail,
+    );
+    final syncableOperations = allOperations.where((operation) {
+      if (operation.domain != PendingSyncOperation.domainGroupSettings) {
+        return false;
+      }
+      if (operation.operationType != PendingSyncOperation.updateGroupSettings) {
+        return false;
+      }
+      if (!operation.isReadyForSync) {
+        return false;
+      }
+      if (groupId != null && operation.groupId != groupId) {
+        return false;
+      }
+      return true;
+    }).toList();
+
+    if (syncableOperations.isEmpty) {
+      return true;
+    }
+
+    var allSuccessful = true;
+    var operations = List<PendingSyncOperation>.from(allOperations);
+
+    for (final operation in syncableOperations) {
+      try {
+        final updatedSettings = await GroupSettingsApiService()
+            .updateGroupSettings(
+              operation.groupId,
+              _settingsFromOperation(operation),
+            );
+        await saveGroupSettings(userEmail, operation.groupId, updatedSettings);
+        operations.removeWhere((entry) => entry.id == operation.id);
+        await PendingSyncQueueService.saveOperations(userEmail, operations);
+      } on UnauthorizedException {
+        rethrow;
+      } on GroupSettingsApiException catch (e) {
+        allSuccessful = false;
+        if (_isPermanentFailure(e.statusCode)) {
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          try {
+            await refreshGroupSettings(userEmail, operation.groupId);
+          } catch (_) {}
+        } else {
+          operations = _replaceOperation(
+            operations,
+            PendingSyncQueueService.scheduleRetry(operation),
+          );
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+        }
+      } on TimeoutException {
+        allSuccessful = false;
+        operations = _replaceOperation(
+          operations,
+          PendingSyncQueueService.scheduleRetry(operation),
+        );
+        await PendingSyncQueueService.saveOperations(userEmail, operations);
+      } catch (_) {
+        allSuccessful = false;
+        operations = _replaceOperation(
+          operations,
+          PendingSyncQueueService.scheduleRetry(operation),
+        );
+        await PendingSyncQueueService.saveOperations(userEmail, operations);
+      }
+    }
+
+    return allSuccessful;
   }
 
   static String _groupSettingsKey(String userEmail, int groupId) {
     return 'group_settings_cache_${userEmail}_$groupId';
+  }
+
+  static Future<PendingSyncOperation> _queueSettingsUpdate(
+    String userEmail,
+    int groupId,
+    GroupSettings payload,
+  ) async {
+    final operations = await PendingSyncQueueService.getOperations(userEmail);
+    final existingOperation = operations
+        .where((operation) {
+          return operation.domain == PendingSyncOperation.domainGroupSettings &&
+              operation.operationType ==
+                  PendingSyncOperation.updateGroupSettings &&
+              operation.groupId == groupId;
+        })
+        .cast<PendingSyncOperation?>()
+        .firstWhere((_) => true, orElse: () => null);
+
+    if (existingOperation != null) {
+      final updatedOperation = existingOperation.copyWith(
+        payload: payload.toJson(),
+        retryCount: 0,
+        clearNextAttemptAt: true,
+      );
+      final updatedOperations = _replaceOperation(operations, updatedOperation);
+      await PendingSyncQueueService.saveOperations(
+        userEmail,
+        updatedOperations,
+      );
+      return updatedOperation;
+    }
+
+    final operation = PendingSyncQueueService.createOperation(
+      userEmail: userEmail,
+      domain: PendingSyncOperation.domainGroupSettings,
+      operationType: PendingSyncOperation.updateGroupSettings,
+      groupId: groupId,
+      payload: payload.toJson(),
+    );
+    await PendingSyncQueueService.addOperation(operation);
+    return operation;
+  }
+
+  static Future<GroupSettings> _refreshOrGetCached(
+    String userEmail,
+    int groupId, {
+    required GroupSettings fallback,
+  }) async {
+    try {
+      return await refreshGroupSettings(userEmail, groupId);
+    } catch (_) {
+      return await getGroupSettings(userEmail, groupId) ?? fallback;
+    }
+  }
+
+  static GroupSettings _settingsFromOperation(PendingSyncOperation operation) {
+    return GroupSettings.fromJson(operation.payload);
+  }
+
+  static List<PendingSyncOperation> _replaceOperation(
+    List<PendingSyncOperation> operations,
+    PendingSyncOperation updatedOperation,
+  ) {
+    return operations.map((operation) {
+      if (operation.id != updatedOperation.id) {
+        return operation;
+      }
+
+      return updatedOperation;
+    }).toList();
+  }
+
+  static bool _isPermanentFailure(int? statusCode) {
+    return statusCode != null && statusCode >= 400 && statusCode < 500;
+  }
+
+  static bool _shouldReloadUi(int? statusCode) {
+    return statusCode == 403 || statusCode == 404;
+  }
+
+  static String _friendlyActionError(
+    GroupSettingsApiException exception,
+    String fallbackMessage,
+  ) {
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Gruppe nicht gefunden / kein Zugriff';
+      default:
+        final message = exception.message.trim();
+        return message.isNotEmpty ? message : fallbackMessage;
+    }
   }
 }

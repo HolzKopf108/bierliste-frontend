@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/group_role_provider.dart';
+import '../providers/sync_provider.dart';
 import '../services/connectivity_service.dart';
 import '../services/offline_group_settings_service.dart';
 import '../services/group_api_service.dart';
@@ -211,6 +212,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
 
     final userEmail = context.read<AuthProvider>().userEmail;
     final groupRoleProvider = context.read<GroupRoleProvider>();
+    final syncProvider = context.read<SyncProvider>();
     final ownRole = groupRoleProvider.roleForGroup(widget.groupId);
     if (userEmail == null) {
       Toast.show(
@@ -219,14 +221,6 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       );
       return;
     }
-
-    if (!await ConnectivityService.isOnline()) {
-      if (!mounted) return;
-      Toast.show(context, 'Keine Verbindung', type: ToastType.warning);
-      return;
-    }
-
-    if (!mounted) return;
 
     if (ownRole != GroupMemberRole.wart) {
       Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
@@ -250,22 +244,39 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     );
 
     try {
-      final updatedSettings =
-          await OfflineGroupSettingsService.updateGroupSettings(
-            userEmail,
-            widget.groupId,
-            payload,
-          );
+      final result = await OfflineGroupSettingsService.updateGroupSettings(
+        userEmail,
+        widget.groupId,
+        payload,
+      );
 
       if (!mounted) return;
       setState(() {
-        _applyGroupSettings(updatedSettings);
+        _applyGroupSettings(result.groupSettings);
+        _loadErrorMessage = null;
       });
-      Toast.show(
-        context,
-        'Gruppeneinstellungen gespeichert',
-        type: ToastType.success,
-      );
+
+      if (result.errorMessage != null) {
+        Toast.show(context, result.errorMessage!, type: ToastType.warning);
+      } else if (result.hasPendingSync) {
+        Toast.show(
+          context,
+          'Gruppeneinstellungen lokal gespeichert',
+          type: ToastType.success,
+        );
+      } else {
+        Toast.show(
+          context,
+          'Gruppeneinstellungen gespeichert',
+          type: ToastType.success,
+        );
+      }
+
+      if (result.hasPendingSync) {
+        unawaited(syncProvider.markPendingSync());
+      } else if (result.shouldReloadUi) {
+        unawaited(groupRoleProvider.refreshRole(userEmail, widget.groupId));
+      }
     } on UnauthorizedException {
       return;
     } on GroupSettingsApiException catch (e) {
@@ -282,10 +293,18 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       }
     } on TimeoutException {
       if (!mounted) return;
-      Toast.show(context, 'Keine Verbindung', type: ToastType.warning);
+      Toast.show(
+        context,
+        'Gruppeneinstellungen lokal gespeichert',
+        type: ToastType.success,
+      );
+      unawaited(syncProvider.markPendingSync());
     } catch (_) {
       if (!mounted) return;
-      Toast.show(context, 'Keine Verbindung', type: ToastType.warning);
+      Toast.show(
+        context,
+        'Gruppeneinstellungen konnten nicht gespeichert werden',
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);

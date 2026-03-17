@@ -1,11 +1,13 @@
 import 'dart:async';
 
+import 'package:bierliste/models/group_member.dart';
 import 'package:bierliste/models/group_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import '../providers/group_role_provider.dart';
 import '../utils/money_input_formatter.dart';
 import '../services/offline_group_settings_service.dart';
 import '../services/group_api_service.dart';
@@ -13,6 +15,43 @@ import '../services/group_settings_api_service.dart';
 import '../services/http_service.dart';
 import '../utils/navigation_helper.dart';
 import '../widgets/toast.dart';
+
+class _GroupSettingsPriceInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final text = newValue.text;
+    final commaIndex = text.indexOf(',');
+
+    if (commaIndex < 0) {
+      if (text.length <= 8) {
+        return newValue;
+      }
+
+      return TextEditingValue(
+        text: text.substring(0, 8),
+        selection: const TextSelection.collapsed(offset: 8),
+      );
+    }
+
+    final integerPart = text.substring(0, commaIndex);
+    final decimalPart = text.substring(commaIndex + 1);
+    final limitedIntegerPart = integerPart.length > 8
+        ? integerPart.substring(0, 8)
+        : integerPart;
+    final limitedDecimalPart = decimalPart.length > 2
+        ? decimalPart.substring(0, 2)
+        : decimalPart;
+    final limitedText = '$limitedIntegerPart,$limitedDecimalPart';
+
+    return TextEditingValue(
+      text: limitedText,
+      selection: TextSelection.collapsed(offset: limitedText.length),
+    );
+  }
+}
 
 class GroupSettingsPage extends StatefulWidget {
   final int groupId;
@@ -43,6 +82,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
 
   Future<void> _loadGroupSettings() async {
     final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
     if (userEmail == null) {
       if (!mounted) return;
       setState(() => _isLoading = false);
@@ -63,6 +103,10 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         _isLoading = false;
       });
     }
+
+    unawaited(
+      groupRoleProvider.loadRole(userEmail, widget.groupId, forceRefresh: true),
+    );
 
     try {
       final groupSettings =
@@ -108,11 +152,17 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     }
 
     final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
+    final ownRole = groupRoleProvider.roleForGroup(widget.groupId);
     if (userEmail == null) {
       Toast.show(
         context,
         'Gruppeneinstellungen konnten nicht gespeichert werden',
       );
+      return;
+    }
+    if (ownRole != GroupMemberRole.wart) {
+      Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
       return;
     }
 
@@ -153,7 +203,14 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       return;
     } on GroupSettingsApiException catch (e) {
       if (!mounted) return;
-      Toast.show(context, e.message);
+      Toast.show(
+        context,
+        _friendlySettingsError(e),
+        type: e.statusCode == 403 ? ToastType.warning : ToastType.error,
+      );
+      if (e.statusCode == 403) {
+        unawaited(groupRoleProvider.refreshRole(userEmail, widget.groupId));
+      }
     } on TimeoutException {
       if (!mounted) return;
       Toast.show(
@@ -179,8 +236,104 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   double? _parsePricePerStrich(String value) {
-    final normalized = value.replaceAll('.', '').replaceAll(',', '.');
-    return double.tryParse(normalized);
+    final normalized = value.trim().replaceAll('.', ',');
+    if (!_isValidPricePerStrichInput(normalized)) {
+      return null;
+    }
+
+    final asDouble = double.tryParse(normalized.replaceAll(',', '.'));
+    if (asDouble == null || asDouble < 0) {
+      return null;
+    }
+
+    return asDouble;
+  }
+
+  bool _isValidPricePerStrichInput(String value) {
+    return RegExp(r'^\d{1,8}(,\d{0,2})?$').hasMatch(value);
+  }
+
+  String _friendlySettingsError(GroupSettingsApiException exception) {
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Gruppe nicht verfügbar oder kein Zugriff';
+      default:
+        return exception.message;
+    }
+  }
+
+  String? _validatePricePerStrich(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (!_isValidPricePerStrichInput(trimmed)) {
+      return 'Maximal 8 Stellen vor dem Komma und 2 nach dem Komma';
+    }
+
+    final parsed = _parsePricePerStrich(trimmed);
+    if (parsed == null) {
+      return 'Preis pro Strich ist ungültig';
+    }
+    if (parsed < 0) {
+      return 'Preis pro Strich darf nicht negativ sein';
+    }
+
+    return null;
+  }
+
+  bool _isReadOnly(bool canEditSettings) {
+    return !canEditSettings || _isSaving || _isLeaving;
+  }
+
+  bool _isSaveDisabled(bool canEditSettings, bool isRoleLoading) {
+    return !canEditSettings || isRoleLoading || _isSaving || _isLeaving;
+  }
+
+  Widget _buildPermissionHint(bool isRoleLoading, bool canEditSettings) {
+    if (isRoleLoading || canEditSettings) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.info_outline),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Du kannst die Einstellungen sehen, aber nur Bierlistenwarte dürfen sie aendern.',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRoleLoadingHint(bool isRoleLoading) {
+    if (!isRoleLoading) {
+      return const SizedBox.shrink();
+    }
+
+    return const Padding(
+      padding: EdgeInsets.only(bottom: 20),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 12),
+          Expanded(child: Text('Berechtigung wird geprüft')),
+        ],
+      ),
+    );
   }
 
   Future<void> _leaveGroup() async {
@@ -219,6 +372,11 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final groupRoleProvider = context.watch<GroupRoleProvider>();
+    final ownRole = groupRoleProvider.roleForGroup(widget.groupId);
+    final canEditSettings = ownRole == GroupMemberRole.wart;
+    final isRoleLoading = groupRoleProvider.isLoadingForGroup(widget.groupId);
+
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(title: const Text('Gruppeneinstellungen')),
@@ -232,9 +390,12 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            _buildRoleLoadingHint(isRoleLoading),
+            _buildPermissionHint(isRoleLoading, canEditSettings),
             TextFormField(
               controller: _groupNameController,
               textInputAction: TextInputAction.next,
+              readOnly: _isReadOnly(canEditSettings),
               decoration: const InputDecoration(
                 labelText: 'Gruppenname',
                 border: OutlineInputBorder(),
@@ -250,35 +411,32 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
             const SizedBox(height: 20),
             TextFormField(
               controller: _pricePerStrichController,
+              readOnly: _isReadOnly(canEditSettings),
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
               textInputAction: TextInputAction.done,
-              inputFormatters: <TextInputFormatter>[MoneyInputFormatter()],
+              inputFormatters: <TextInputFormatter>[
+                MoneyInputFormatter(),
+                _GroupSettingsPriceInputFormatter(),
+              ],
               decoration: const InputDecoration(
                 labelText: 'Preis pro Strich',
                 border: OutlineInputBorder(),
                 suffixText: 'EUR',
               ),
-              validator: (value) {
-                final parsed = _parsePricePerStrich(value?.trim() ?? '');
-                if (parsed == null) {
-                  return 'Preis pro Strich ist ungültig';
-                }
-                if (parsed < 0) {
-                  return 'Preis pro Strich darf nicht negativ sein';
-                }
-                return null;
-              },
+              validator: _validatePricePerStrich,
             ),
             const SizedBox(height: 12),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('Nur Warte dürfen für andere buchen'),
               value: _onlyWartsCanBookForOthers,
-              onChanged: (value) {
-                setState(() => _onlyWartsCanBookForOthers = value);
-              },
+              onChanged: _isReadOnly(canEditSettings)
+                  ? null
+                  : (value) {
+                      setState(() => _onlyWartsCanBookForOthers = value);
+                    },
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
@@ -297,7 +455,9 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 textStyle: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              onPressed: _isSaving || _isLeaving ? null : _saveSettings,
+              onPressed: _isSaveDisabled(canEditSettings, isRoleLoading)
+                  ? null
+                  : _saveSettings,
             ),
             const SizedBox(height: 32),
             ElevatedButton.icon(

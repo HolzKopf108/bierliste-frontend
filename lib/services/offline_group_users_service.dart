@@ -144,7 +144,7 @@ class OfflineGroupUsersService {
       userEmail,
       groupId,
       operation,
-      fallbackErrorMessage: 'Rolle konnte nicht aktualisiert werden',
+      fallbackErrorMessage: 'Bierlistenwart konnte nicht herabgestuft werden',
     );
   }
 
@@ -329,7 +329,11 @@ class OfflineGroupUsersService {
         return OfflineGroupUsersActionResult(
           members: members,
           hasPendingSync: false,
-          errorMessage: _friendlyActionError(e, fallbackErrorMessage),
+          errorMessage: _friendlyActionError(
+            e,
+            operation,
+            fallbackErrorMessage,
+          ),
         );
       }
 
@@ -421,20 +425,41 @@ class OfflineGroupUsersService {
 
   static String _friendlyActionError(
     GroupApiException exception,
+    PendingSyncOperation operation,
     String fallbackMessage,
   ) {
+    final message = exception.message.trim();
+
+    if (operation.operationType == PendingSyncOperation.demoteGroupMember &&
+        _isLastWartDemotionBlocked(exception.statusCode, message)) {
+      return 'Der letzte Bierlistenwart kann nicht herabgestuft werden';
+    }
+
     switch (exception.statusCode) {
       case 403:
         return 'Du darfst diese Aktion nicht ausführen';
       case 404:
         return 'Mitglied wurde nicht gefunden';
       default:
-        final message = exception.message.trim();
         if (message.isNotEmpty) {
           return message;
         }
         return fallbackMessage;
     }
+  }
+
+  static bool _isLastWartDemotionBlocked(int? statusCode, String message) {
+    final normalizedMessage = message.toLowerCase();
+
+    if (statusCode == 409) {
+      return true;
+    }
+
+    return normalizedMessage.contains('letzte') ||
+        normalizedMessage.contains('last admin') ||
+        normalizedMessage.contains('last wart') ||
+        normalizedMessage.contains('only admin') ||
+        normalizedMessage.contains('mindestens ein');
   }
 
   static String _groupMembersKey(String userEmail, int groupId) {

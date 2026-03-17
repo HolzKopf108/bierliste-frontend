@@ -7,7 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/auth_provider.dart';
 import '../routes/app_routes.dart';
 import '../services/group_api_service.dart';
-import '../services/group_member_cache_service.dart';
+import '../services/offline_group_users_service.dart';
 import '../services/http_service.dart';
 
 class LoadingPage extends StatefulWidget {
@@ -88,7 +88,7 @@ class _LoadingPageState extends State<LoadingPage> {
       final userEmail = _authProvider.userEmail;
       if (userEmail != null && groups.isNotEmpty) {
         unawaited(
-          GroupMemberCacheService.syncGroupMembersInBackground(
+          OfflineGroupUsersService.syncGroupMembersInBackground(
             userEmail,
             groups.map((group) => group.id),
           ),

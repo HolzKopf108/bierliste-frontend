@@ -5,8 +5,8 @@ import 'providers/group_role_provider.dart';
 import 'providers/sync_provider.dart';
 import 'providers/theme_provider.dart';
 import 'routes/app_routes.dart';
-import 'services/group_counter_api_service.dart';
 import 'services/http_service.dart';
+import 'services/pending_sync_service.dart';
 import 'providers/auth_provider.dart';
 import 'main.dart';
 import 'config/app_theme.dart';
@@ -32,9 +32,7 @@ class BierlisteApp extends StatelessWidget {
         }
 
         try {
-          return await GroupCounterApiService().syncPendingCounterOperations(
-            userEmail,
-          );
+          return await PendingSyncService.syncPendingOperations(userEmail);
         } on UnauthorizedException {
           return false;
         }

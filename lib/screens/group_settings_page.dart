@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../providers/auth_provider.dart';
+import '../services/offline_group_settings_service.dart';
 import '../services/group_api_service.dart';
 import '../services/http_service.dart';
 import '../utils/navigation_helper.dart';
@@ -28,8 +31,32 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   Future<void> _loadGroup() async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+    if (userEmail == null) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      Toast.show(context, 'Gruppe konnte nicht geladen werden');
+      return;
+    }
+
+    final cachedGroup = await OfflineGroupSettingsService.getGroup(
+      userEmail,
+      widget.groupId,
+    );
+    if (!mounted) return;
+
+    if (cachedGroup != null) {
+      setState(() {
+        _groupNameController.text = cachedGroup.name;
+        _isLoading = false;
+      });
+    }
+
     try {
-      final group = await _groupApiService.getGroup(widget.groupId);
+      final group = await OfflineGroupSettingsService.refreshGroup(
+        userEmail,
+        widget.groupId,
+      );
       if (!mounted) return;
       setState(() {
         _groupNameController.text = group.name;
@@ -39,10 +66,16 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       if (!mounted) return;
       setState(() => _isLoading = false);
     } on GroupApiException catch (e) {
+      if (cachedGroup != null) {
+        return;
+      }
       if (!mounted) return;
       setState(() => _isLoading = false);
       Toast.show(context, e.message);
     } catch (_) {
+      if (cachedGroup != null) {
+        return;
+      }
       if (!mounted) return;
       setState(() => _isLoading = false);
       Toast.show(context, 'Fehler beim Laden der Gruppe');

@@ -5,9 +5,10 @@ import 'package:provider/provider.dart';
 import '../models/group_member.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_role_provider.dart';
+import '../providers/sync_provider.dart';
 import '../services/connectivity_service.dart';
 import '../services/group_api_service.dart';
-import '../services/group_member_cache_service.dart';
+import '../services/offline_group_users_service.dart';
 import '../services/http_service.dart';
 import '../widgets/toast.dart';
 
@@ -26,7 +27,6 @@ class GroupUsersPage extends StatefulWidget {
 }
 
 class _GroupUsersPageState extends State<GroupUsersPage> {
-  final GroupApiService _groupApiService = GroupApiService();
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
   bool _isLoading = true;
@@ -58,7 +58,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       return;
     }
 
-    final cachedMembers = await GroupMemberCacheService.getGroupMembers(
+    final cachedMembers = await OfflineGroupUsersService.getGroupMembers(
       userEmail,
       widget.groupId,
     );
@@ -79,7 +79,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
     try {
       if (await ConnectivityService.isOnline()) {
-        final members = await GroupMemberCacheService.refreshGroupMembers(
+        final members = await OfflineGroupUsersService.refreshGroupMembers(
           userEmail,
           widget.groupId,
         );
@@ -134,7 +134,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     String userEmail, {
     required String fallbackErrorMessage,
   }) async {
-    final cachedMembers = await GroupMemberCacheService.getGroupMembers(
+    final cachedMembers = await OfflineGroupUsersService.getGroupMembers(
       userEmail,
       widget.groupId,
     );
@@ -192,15 +192,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
 
     final userEmail = context.read<AuthProvider>().userEmail;
-    final groupRoleProvider = context.read<GroupRoleProvider>();
+    final syncProvider = context.read<SyncProvider>();
     if (userEmail == null) {
       Toast.show(context, 'Berechtigung konnte nicht geprüft werden');
-      return;
-    }
-
-    if (!await ConnectivityService.isOnline()) {
-      if (!mounted) return;
-      Toast.show(context, 'Aktion ist offline nicht verfügbar');
       return;
     }
 
@@ -209,24 +203,20 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     });
 
     try {
-      switch (action) {
-        case _MemberAction.promoteToWart:
-          await _groupApiService.promoteGroupMember(
+      final members = switch (action) {
+        _MemberAction.promoteToWart =>
+          await OfflineGroupUsersService.queuePromoteMember(
+            userEmail,
             widget.groupId,
-            member.userId,
-          );
-        case _MemberAction.demoteToMember:
-          await _groupApiService.demoteGroupMember(
+            member,
+          ),
+        _MemberAction.demoteToMember =>
+          await OfflineGroupUsersService.queueDemoteMember(
+            userEmail,
             widget.groupId,
-            member.userId,
-          );
-      }
-
-      final members = await GroupMemberCacheService.refreshGroupMembers(
-        userEmail,
-        widget.groupId,
-      );
-      await groupRoleProvider.refreshRole(userEmail, widget.groupId);
+            member,
+          ),
+      };
       if (!mounted) return;
 
       setState(() {
@@ -236,20 +226,14 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
       Toast.show(
         context,
-        action == _MemberAction.promoteToWart
-            ? 'Rolle wurde aktualisiert'
-            : 'Rolle wurde aktualisiert',
+        'Rollenänderung gespeichert',
         type: ToastType.success,
       );
-    } on UnauthorizedException {
-      if (!mounted) return;
-      Toast.show(context, 'Aktion nicht erlaubt');
-    } on GroupApiException catch (e) {
-      if (!mounted) return;
-      Toast.show(context, e.message);
+
+      unawaited(syncProvider.markPendingSync());
     } catch (_) {
       if (!mounted) return;
-      Toast.show(context, 'Rolle konnte nicht aktualisiert werden');
+      Toast.show(context, 'Rollenänderung konnte nicht gespeichert werden');
     } finally {
       if (mounted) {
         setState(() {

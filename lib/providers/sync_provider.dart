@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/connectivity_service.dart';
-import '../services/offline_strich_service.dart';
+import '../services/pending_sync_service.dart';
 import '../services/token_service.dart';
 
 class SyncProvider with ChangeNotifier {
@@ -49,7 +49,7 @@ class SyncProvider with ChangeNotifier {
     final userEmail = await TokenService.getUserEmail();
     final hasPending =
         userEmail != null &&
-        await OfflineStrichService.hasPendingCounterOperations(userEmail);
+        await PendingSyncService.hasPendingOperations(userEmail);
     _setHasPendingSync(hasPending);
   }
 

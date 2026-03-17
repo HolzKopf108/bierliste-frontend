@@ -52,6 +52,20 @@ class GroupMember {
     };
   }
 
+  GroupMember copyWith({
+    int? userId,
+    String? username,
+    int? strichCount,
+    GroupMemberRole? role,
+  }) {
+    return GroupMember(
+      userId: userId ?? this.userId,
+      username: username ?? this.username,
+      strichCount: strichCount ?? this.strichCount,
+      role: role ?? this.role,
+    );
+  }
+
   static int _readInt(Map<String, dynamic> json, String key) {
     final value = json[key];
     if (value == null) {

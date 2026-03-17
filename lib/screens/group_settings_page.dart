@@ -15,6 +15,7 @@ class GroupSettingsPage extends StatefulWidget {
 class _GroupSettingsPageState extends State<GroupSettingsPage> {
   final GroupApiService _groupApiService = GroupApiService();
   final _groupNameController = TextEditingController();
+  final _groupIdController = TextEditingController();
 
   bool _isLoading = true;
   bool _isLeaving = false;
@@ -22,6 +23,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   @override
   void initState() {
     super.initState();
+    _groupIdController.text = widget.groupId.toString();
     _loadGroup();
   }
 
@@ -76,6 +78,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   @override
   void dispose() {
     _groupNameController.dispose();
+    _groupIdController.dispose();
     super.dispose();
   }
 
@@ -115,6 +118,16 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
               textStyle: const TextStyle(fontWeight: FontWeight.bold),
             ),
             onPressed: _isLeaving ? null : _leaveGroup,
+          ),
+          const SizedBox(height: 24),
+          TextField(
+            controller: _groupIdController,
+            readOnly: true,
+            style: Theme.of(context).textTheme.bodySmall,
+            decoration: const InputDecoration(
+              labelText: 'Gruppen-ID',
+              border: OutlineInputBorder(),
+            ),
           ),
         ],
       ),

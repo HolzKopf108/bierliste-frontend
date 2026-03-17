@@ -144,9 +144,43 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return strichCount == 1 ? 'Strich' : 'Striche';
   }
 
+  String _roleLabel(GroupMemberRole role) {
+    switch (role) {
+      case GroupMemberRole.admin:
+        return 'Bierlistenwart';
+      case GroupMemberRole.member:
+        return 'Mitglied';
+      case GroupMemberRole.unknown:
+        return 'Unbekannte Rolle';
+    }
+  }
+
+  Color _roleBackgroundColor(ThemeData theme, GroupMemberRole role) {
+    switch (role) {
+      case GroupMemberRole.admin:
+        return theme.colorScheme.primaryContainer;
+      case GroupMemberRole.member:
+        return theme.colorScheme.surfaceContainerHighest;
+      case GroupMemberRole.unknown:
+        return theme.colorScheme.errorContainer;
+    }
+  }
+
+  Color _roleForegroundColor(ThemeData theme, GroupMemberRole role) {
+    switch (role) {
+      case GroupMemberRole.admin:
+        return theme.colorScheme.onPrimaryContainer;
+      case GroupMemberRole.member:
+        return theme.colorScheme.onSurfaceVariant;
+      case GroupMemberRole.unknown:
+        return theme.colorScheme.onErrorContainer;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final primaryColor = Theme.of(context).colorScheme.primary;
+    final theme = Theme.of(context);
+    final primaryColor = theme.colorScheme.primary;
     final sortedMembers = _sortedMembers();
 
     return Scaffold(
@@ -221,13 +255,22 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                 itemBuilder: (context, index) {
                   final member = sortedMembers[index];
                   final strichLabel = _strichLabel(member.strichCount);
+                  final roleLabel = _roleLabel(member.role);
+                  final roleBackgroundColor = _roleBackgroundColor(
+                    theme,
+                    member.role,
+                  );
+                  final roleForegroundColor = _roleForegroundColor(
+                    theme,
+                    member.role,
+                  );
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
                     child: Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
+                        color: theme.cardColor,
                         borderRadius: BorderRadius.circular(12),
                         boxShadow: [
                           BoxShadow(color: Colors.black12, blurRadius: 4),
@@ -239,14 +282,40 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                           const Icon(Icons.person),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              member.username,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  member.username,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: roleBackgroundColor,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    roleLabel,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: roleForegroundColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -272,7 +341,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                   overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 12,
-                                    color: Theme.of(context).hintColor,
+                                    color: theme.hintColor,
                                   ),
                                 ),
                               ],

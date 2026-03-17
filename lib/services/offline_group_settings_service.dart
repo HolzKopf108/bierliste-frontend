@@ -55,6 +55,19 @@ class OfflineGroupSettingsService {
     return groupSettings;
   }
 
+  static Future<GroupSettings> updateGroupSettings(
+    String userEmail,
+    int groupId,
+    GroupSettings payload,
+  ) async {
+    final groupSettings = await GroupSettingsApiService().updateGroupSettings(
+      groupId,
+      payload,
+    );
+    await saveGroupSettings(userEmail, groupId, groupSettings);
+    return groupSettings;
+  }
+
   static Future<bool> syncPendingOperations(String userEmail) async {
     return true;
   }

@@ -8,13 +8,34 @@ import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/group_role_provider.dart';
-import '../utils/money_input_formatter.dart';
+import '../services/connectivity_service.dart';
 import '../services/offline_group_settings_service.dart';
 import '../services/group_api_service.dart';
 import '../services/group_settings_api_service.dart';
 import '../services/http_service.dart';
 import '../utils/navigation_helper.dart';
+import '../utils/money_input_formatter.dart';
 import '../widgets/toast.dart';
+
+class _DecimalSeparatorInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final normalizedText = newValue.text.replaceAll('.', ',');
+    if (normalizedText == newValue.text) {
+      return newValue;
+    }
+
+    return TextEditingValue(
+      text: normalizedText,
+      selection: TextSelection.collapsed(
+        offset: newValue.selection.baseOffset.clamp(0, normalizedText.length),
+      ),
+    );
+  }
+}
 
 class _GroupSettingsPriceInputFormatter extends TextInputFormatter {
   @override
@@ -72,6 +93,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   bool _isSaving = false;
   bool _isLeaving = false;
   bool _onlyWartsCanBookForOthers = false;
+  String? _loadErrorMessage;
 
   @override
   void initState() {
@@ -83,9 +105,18 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   Future<void> _loadGroupSettings() async {
     final userEmail = context.read<AuthProvider>().userEmail;
     final groupRoleProvider = context.read<GroupRoleProvider>();
+
+    setState(() {
+      _isLoading = true;
+      _loadErrorMessage = null;
+    });
+
     if (userEmail == null) {
       if (!mounted) return;
-      setState(() => _isLoading = false);
+      setState(() {
+        _isLoading = false;
+        _loadErrorMessage = 'Gruppeneinstellungen konnten nicht geladen werden';
+      });
       Toast.show(context, 'Gruppeneinstellungen konnten nicht geladen werden');
       return;
     }
@@ -101,12 +132,26 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       setState(() {
         _applyGroupSettings(cachedGroupSettings);
         _isLoading = false;
+        _loadErrorMessage = null;
       });
     }
 
     unawaited(
       groupRoleProvider.loadRole(userEmail, widget.groupId, forceRefresh: true),
     );
+
+    if (!await ConnectivityService.isOnline()) {
+      if (cachedGroupSettings != null) {
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadErrorMessage = 'Keine Verbindung';
+      });
+      return;
+    }
 
     try {
       final groupSettings =
@@ -118,31 +163,44 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       setState(() {
         _applyGroupSettings(groupSettings);
         _isLoading = false;
+        _loadErrorMessage = null;
       });
     } on UnauthorizedException {
       if (!mounted) return;
       setState(() => _isLoading = false);
     } on GroupSettingsApiException catch (e) {
       if (cachedGroupSettings != null) {
+        if (!mounted) return;
+        Toast.show(context, _friendlyLoadErrorMessage(e));
         return;
       }
       if (!mounted) return;
-      setState(() => _isLoading = false);
-      Toast.show(context, e.message);
+      setState(() {
+        _isLoading = false;
+        _loadErrorMessage = _friendlyLoadErrorMessage(e);
+      });
     } on TimeoutException {
       if (cachedGroupSettings != null) {
+        if (!mounted) return;
+        Toast.show(context, 'Keine Verbindung');
         return;
       }
       if (!mounted) return;
-      setState(() => _isLoading = false);
-      Toast.show(context, 'Gruppeneinstellungen konnten nicht geladen werden');
+      setState(() {
+        _isLoading = false;
+        _loadErrorMessage = 'Keine Verbindung';
+      });
     } catch (_) {
       if (cachedGroupSettings != null) {
+        if (!mounted) return;
+        Toast.show(context, 'Keine Verbindung');
         return;
       }
       if (!mounted) return;
-      setState(() => _isLoading = false);
-      Toast.show(context, 'Fehler beim Laden der Gruppe');
+      setState(() {
+        _isLoading = false;
+        _loadErrorMessage = 'Keine Verbindung';
+      });
     }
   }
 
@@ -161,6 +219,15 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       );
       return;
     }
+
+    if (!await ConnectivityService.isOnline()) {
+      if (!mounted) return;
+      Toast.show(context, 'Keine Verbindung', type: ToastType.warning);
+      return;
+    }
+
+    if (!mounted) return;
+
     if (ownRole != GroupMemberRole.wart) {
       Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
       return;
@@ -205,21 +272,20 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       if (!mounted) return;
       Toast.show(
         context,
-        _friendlySettingsError(e),
-        type: e.statusCode == 403 ? ToastType.warning : ToastType.error,
+        _friendlySaveErrorMessage(e),
+        type: e.statusCode == 403 || e.statusCode == 404
+            ? ToastType.warning
+            : ToastType.error,
       );
       if (e.statusCode == 403) {
         unawaited(groupRoleProvider.refreshRole(userEmail, widget.groupId));
       }
     } on TimeoutException {
       if (!mounted) return;
-      Toast.show(
-        context,
-        'Gruppeneinstellungen konnten nicht gespeichert werden',
-      );
+      Toast.show(context, 'Keine Verbindung', type: ToastType.warning);
     } catch (_) {
       if (!mounted) return;
-      Toast.show(context, 'Fehler beim Speichern der Gruppeneinstellungen');
+      Toast.show(context, 'Keine Verbindung', type: ToastType.warning);
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -253,12 +319,31 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     return RegExp(r'^\d{1,8}(,\d{0,2})?$').hasMatch(value);
   }
 
-  String _friendlySettingsError(GroupSettingsApiException exception) {
+  String _friendlyLoadErrorMessage(GroupSettingsApiException exception) {
+    if (_isNetworkError(exception)) {
+      return 'Keine Verbindung';
+    }
+
     switch (exception.statusCode) {
       case 403:
         return 'Keine Berechtigung';
       case 404:
-        return 'Gruppe nicht verfügbar oder kein Zugriff';
+        return 'Gruppe nicht gefunden / kein Zugriff';
+      default:
+        return exception.message;
+    }
+  }
+
+  String _friendlySaveErrorMessage(GroupSettingsApiException exception) {
+    if (_isNetworkError(exception)) {
+      return 'Keine Verbindung';
+    }
+
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Gruppe nicht gefunden / kein Zugriff';
       default:
         return exception.message;
     }
@@ -266,11 +351,16 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
 
   String? _validatePricePerStrich(String? value) {
     final trimmed = value?.trim() ?? '';
-    if (!_isValidPricePerStrichInput(trimmed)) {
+    if (trimmed.isEmpty) {
+      return 'Preis pro Strich darf nicht leer sein';
+    }
+
+    final normalized = trimmed.replaceAll('.', ',');
+    if (!_isValidPricePerStrichInput(normalized)) {
       return 'Maximal 8 Stellen vor dem Komma und 2 nach dem Komma';
     }
 
-    final parsed = _parsePricePerStrich(trimmed);
+    final parsed = _parsePricePerStrich(normalized);
     if (parsed == null) {
       return 'Preis pro Strich ist ungültig';
     }
@@ -279,6 +369,12 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     }
 
     return null;
+  }
+
+  bool _isNetworkError(GroupSettingsApiException exception) {
+    final message = exception.message.trim().toLowerCase();
+    return exception.statusCode == null &&
+        (message == 'netzwerkfehler' || message.contains('timeout'));
   }
 
   bool _isReadOnly(bool canEditSettings) {
@@ -383,6 +479,32 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         body: const Center(child: CircularProgressIndicator()),
       );
     }
+
+    if (_loadErrorMessage != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Gruppeneinstellungen')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off, size: 48),
+                const SizedBox(height: 16),
+                Text(_loadErrorMessage!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: _loadGroupSettings,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Erneut laden'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(title: const Text('Gruppeneinstellungen')),
       body: Form(
@@ -417,6 +539,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
               ),
               textInputAction: TextInputAction.done,
               inputFormatters: <TextInputFormatter>[
+                _DecimalSeparatorInputFormatter(),
                 MoneyInputFormatter(),
                 _GroupSettingsPriceInputFormatter(),
               ],
@@ -430,7 +553,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
             const SizedBox(height: 12),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
-              title: const Text('Nur Warte dürfen für andere buchen'),
+              title: const Text('Nur Bierlistenwarte dürfen für andere buchen'),
               value: _onlyWartsCanBookForOthers,
               onChanged: _isReadOnly(canEditSettings)
                   ? null

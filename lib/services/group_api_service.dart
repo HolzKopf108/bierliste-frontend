@@ -176,6 +176,24 @@ class GroupApiService {
     }
   }
 
+  Future<GroupMember> promoteGroupMember(int groupId, int targetUserId) {
+    return _updateGroupMemberRole(
+      groupId,
+      targetUserId,
+      endpoint: 'roles/promote',
+      fallbackMessage: 'Rolle konnte nicht aktualisiert werden',
+    );
+  }
+
+  Future<GroupMember> demoteGroupMember(int groupId, int targetUserId) {
+    return _updateGroupMemberRole(
+      groupId,
+      targetUserId,
+      endpoint: 'roles/demote',
+      fallbackMessage: 'Rolle konnte nicht aktualisiert werden',
+    );
+  }
+
   Future<void> joinGroup(int groupId) async {
     try {
       final response = await HttpService.authorizedRequest(
@@ -259,5 +277,41 @@ class GroupApiService {
     } catch (_) {}
 
     return fallback;
+  }
+
+  Future<GroupMember> _updateGroupMemberRole(
+    int groupId,
+    int targetUserId, {
+    required String endpoint,
+    required String fallbackMessage,
+  }) async {
+    try {
+      final response = await HttpService.authorizedRequest(
+        '$_groupsBase/$groupId/$endpoint',
+        'POST',
+        body: {'targetUserId': targetUserId},
+      );
+      _ensureSuccess(response, fallbackMessage);
+
+      final data = _decode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw GroupApiException('Ungültige Serverantwort');
+      }
+
+      return GroupMember.fromJson(data);
+    } on UnauthorizedException {
+      rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('_updateGroupMemberRole Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
+    } on FormatException catch (e) {
+      debugPrint('_updateGroupMemberRole Parse-Fehler: $e');
+      throw GroupApiException('Ungültige Serverantwort');
+    } on GroupApiException {
+      rethrow;
+    } catch (e) {
+      debugPrint('_updateGroupMemberRole Fehler: $e');
+      throw GroupApiException('Netzwerkfehler');
+    }
   }
 }

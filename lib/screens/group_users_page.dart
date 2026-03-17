@@ -9,8 +9,11 @@ import '../services/connectivity_service.dart';
 import '../services/group_api_service.dart';
 import '../services/group_member_cache_service.dart';
 import '../services/http_service.dart';
+import '../widgets/toast.dart';
 
 enum SortOption { alphabet, strichCount }
+
+enum _MemberAction { promoteToWart, demoteToMember }
 
 class GroupUsersPage extends StatefulWidget {
   final int groupId;
@@ -23,9 +26,11 @@ class GroupUsersPage extends StatefulWidget {
 }
 
 class _GroupUsersPageState extends State<GroupUsersPage> {
+  final GroupApiService _groupApiService = GroupApiService();
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
   bool _isLoading = true;
+  int? _updatingMemberUserId;
   String? _loadErrorMessage;
 
   @override
@@ -178,10 +183,90 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return strichCount == 1 ? 'Strich' : 'Striche';
   }
 
+  Future<void> _handleMemberAction(
+    GroupMember member,
+    _MemberAction action,
+  ) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
+    if (userEmail == null) {
+      Toast.show(context, 'Berechtigung konnte nicht geprüft werden');
+      return;
+    }
+
+    if (!await ConnectivityService.isOnline()) {
+      if (!mounted) return;
+      Toast.show(context, 'Aktion ist offline nicht verfügbar');
+      return;
+    }
+
+    setState(() {
+      _updatingMemberUserId = member.userId;
+    });
+
+    try {
+      switch (action) {
+        case _MemberAction.promoteToWart:
+          await _groupApiService.promoteGroupMember(
+            widget.groupId,
+            member.userId,
+          );
+        case _MemberAction.demoteToMember:
+          await _groupApiService.demoteGroupMember(
+            widget.groupId,
+            member.userId,
+          );
+      }
+
+      final members = await GroupMemberCacheService.refreshGroupMembers(
+        userEmail,
+        widget.groupId,
+      );
+      await groupRoleProvider.refreshRole(userEmail, widget.groupId);
+      if (!mounted) return;
+
+      setState(() {
+        _members = members;
+        _loadErrorMessage = null;
+      });
+
+      Toast.show(
+        context,
+        action == _MemberAction.promoteToWart
+            ? 'Rolle wurde aktualisiert'
+            : 'Rolle wurde aktualisiert',
+        type: ToastType.success,
+      );
+    } on UnauthorizedException {
+      if (!mounted) return;
+      Toast.show(context, 'Aktion nicht erlaubt');
+    } on GroupApiException catch (e) {
+      if (!mounted) return;
+      Toast.show(context, e.message);
+    } catch (_) {
+      if (!mounted) return;
+      Toast.show(context, 'Rolle konnte nicht aktualisiert werden');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingMemberUserId = null;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final primaryColor = theme.colorScheme.primary;
+    final ownRole = context.watch<GroupRoleProvider>().roleForGroup(
+      widget.groupId,
+    );
+    final canManageMembers = ownRole == GroupMemberRole.wart;
     final sortedMembers = _sortedMembers();
 
     return Scaffold(
@@ -257,6 +342,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   final member = sortedMembers[index];
                   final strichLabel = _strichLabel(member.strichCount);
                   final showWartBadge = member.role == GroupMemberRole.wart;
+                  final showMemberMenu = canManageMembers;
+                  final isUpdatingMember =
+                      _updatingMemberUserId == member.userId;
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -357,6 +445,45 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                               ],
                             ),
                           ),
+                          if (showMemberMenu) ...[
+                            const SizedBox(width: 8),
+                            isUpdatingMember
+                                ? SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: theme.colorScheme.primary,
+                                    ),
+                                  )
+                                : PopupMenuButton<_MemberAction>(
+                                    tooltip: 'Mitglied verwalten',
+                                    onSelected: (action) =>
+                                        _handleMemberAction(member, action),
+                                    itemBuilder: (context) {
+                                      final items =
+                                          <PopupMenuEntry<_MemberAction>>[];
+                                      if (member.role == GroupMemberRole.wart) {
+                                        items.add(
+                                          const PopupMenuItem<_MemberAction>(
+                                            value: _MemberAction.demoteToMember,
+                                            child: Text('Als Mitglied setzen'),
+                                          ),
+                                        );
+                                      } else {
+                                        items.add(
+                                          const PopupMenuItem<_MemberAction>(
+                                            value: _MemberAction.promoteToWart,
+                                            child: Text(
+                                              'Zum Bierlistenwart machen',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return items;
+                                    },
+                                  ),
+                          ],
                         ],
                       ),
                     ),

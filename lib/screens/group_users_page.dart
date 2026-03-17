@@ -144,39 +144,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return strichCount == 1 ? 'Strich' : 'Striche';
   }
 
-  String _roleLabel(GroupMemberRole role) {
-    switch (role) {
-      case GroupMemberRole.admin:
-        return 'Bierlistenwart';
-      case GroupMemberRole.member:
-        return 'Mitglied';
-      case GroupMemberRole.unknown:
-        return 'Unbekannte Rolle';
-    }
-  }
-
-  Color _roleBackgroundColor(ThemeData theme, GroupMemberRole role) {
-    switch (role) {
-      case GroupMemberRole.admin:
-        return theme.colorScheme.primaryContainer;
-      case GroupMemberRole.member:
-        return theme.colorScheme.surfaceContainerHighest;
-      case GroupMemberRole.unknown:
-        return theme.colorScheme.errorContainer;
-    }
-  }
-
-  Color _roleForegroundColor(ThemeData theme, GroupMemberRole role) {
-    switch (role) {
-      case GroupMemberRole.admin:
-        return theme.colorScheme.onPrimaryContainer;
-      case GroupMemberRole.member:
-        return theme.colorScheme.onSurfaceVariant;
-      case GroupMemberRole.unknown:
-        return theme.colorScheme.onErrorContainer;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -255,15 +222,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                 itemBuilder: (context, index) {
                   final member = sortedMembers[index];
                   final strichLabel = _strichLabel(member.strichCount);
-                  final roleLabel = _roleLabel(member.role);
-                  final roleBackgroundColor = _roleBackgroundColor(
-                    theme,
-                    member.role,
-                  );
-                  final roleForegroundColor = _roleForegroundColor(
-                    theme,
-                    member.role,
-                  );
+                  final showWartBadge = member.role == GroupMemberRole.wart;
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -294,27 +253,44 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
-                                const SizedBox(height: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: roleBackgroundColor,
-                                    borderRadius: BorderRadius.circular(999),
-                                  ),
-                                  child: Text(
-                                    roleLabel,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: roleForegroundColor,
+                                if (showWartBadge) ...[
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primaryContainer,
+                                      borderRadius: BorderRadius.circular(999),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.verified_user,
+                                          size: 14,
+                                          color: theme
+                                              .colorScheme
+                                              .onPrimaryContainer,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          'Bierlistenwart',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: theme
+                                                .colorScheme
+                                                .onPrimaryContainer,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ),
+                                ],
                               ],
                             ),
                           ),

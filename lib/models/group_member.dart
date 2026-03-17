@@ -1,6 +1,6 @@
 enum GroupMemberRole {
   member('MEMBER'),
-  admin('ADMIN'),
+  wart('ADMIN'),
   unknown('UNKNOWN');
 
   final String jsonValue;
@@ -9,14 +9,15 @@ enum GroupMemberRole {
 
   static GroupMemberRole fromJsonValue(dynamic value) {
     final normalizedValue = value?.toString().trim().toUpperCase();
-
-    for (final role in GroupMemberRole.values) {
-      if (role.jsonValue == normalizedValue) {
-        return role;
-      }
+    switch (normalizedValue) {
+      case 'MEMBER':
+        return GroupMemberRole.member;
+      case 'ADMIN':
+      case 'WART':
+        return GroupMemberRole.wart;
+      default:
+        return GroupMemberRole.unknown;
     }
-
-    return GroupMemberRole.unknown;
   }
 }
 

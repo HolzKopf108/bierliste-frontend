@@ -12,11 +12,13 @@ import 'package:hive/hive.dart';
 class OfflineGroupUsersActionResult {
   final List<GroupMember> members;
   final bool hasPendingSync;
+  final bool shouldReloadUi;
   final String? errorMessage;
 
   const OfflineGroupUsersActionResult({
     required this.members,
     required this.hasPendingSync,
+    this.shouldReloadUi = false,
     this.errorMessage,
   });
 }
@@ -329,6 +331,7 @@ class OfflineGroupUsersService {
         return OfflineGroupUsersActionResult(
           members: members,
           hasPendingSync: false,
+          shouldReloadUi: _shouldReloadUi(e.statusCode),
           errorMessage: _friendlyActionError(
             e,
             operation,
@@ -435,11 +438,18 @@ class OfflineGroupUsersService {
       return 'Der letzte Bierlistenwart kann nicht herabgestuft werden';
     }
 
+    if (_isGroupUnavailableActionError(exception.statusCode, message)) {
+      return 'Gruppe nicht verfügbar oder kein Zugriff';
+    }
+
     switch (exception.statusCode) {
       case 403:
-        return 'Du darfst diese Aktion nicht ausführen';
+        return 'Keine Berechtigung';
       case 404:
-        return 'Mitglied wurde nicht gefunden';
+        if (_isMemberUnavailableError(message)) {
+          return 'Mitglied wurde nicht gefunden';
+        }
+        return 'Gruppe nicht verfügbar oder kein Zugriff';
       default:
         if (message.isNotEmpty) {
           return message;
@@ -460,6 +470,30 @@ class OfflineGroupUsersService {
         normalizedMessage.contains('last wart') ||
         normalizedMessage.contains('only admin') ||
         normalizedMessage.contains('mindestens ein');
+  }
+
+  static bool _isGroupUnavailableActionError(int? statusCode, String message) {
+    if (statusCode != 403 && statusCode != 404) {
+      return false;
+    }
+
+    final normalizedMessage = message.toLowerCase();
+    return normalizedMessage.contains('gruppe') ||
+        normalizedMessage.contains('group') ||
+        normalizedMessage.contains('zugriff') ||
+        normalizedMessage.contains('access') ||
+        normalizedMessage.contains('forbidden');
+  }
+
+  static bool _isMemberUnavailableError(String message) {
+    final normalizedMessage = message.toLowerCase();
+    return normalizedMessage.contains('mitglied') ||
+        normalizedMessage.contains('member') ||
+        normalizedMessage.contains('user');
+  }
+
+  static bool _shouldReloadUi(int? statusCode) {
+    return statusCode == 403 || statusCode == 404;
   }
 
   static String _groupMembersKey(String userEmail, int groupId) {

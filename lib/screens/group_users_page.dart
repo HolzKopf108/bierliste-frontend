@@ -104,9 +104,21 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     } on UnauthorizedException {
       if (!mounted) return;
       setState(() {
+        _members = [];
         _isLoading = false;
+        _loadErrorMessage = 'Keine Berechtigung';
       });
     } on GroupApiException catch (e) {
+      if (_isGroupUnavailableError(e.statusCode)) {
+        if (!mounted) return;
+        setState(() {
+          _members = [];
+          _isLoading = false;
+          _loadErrorMessage = 'Gruppe nicht verfügbar oder kein Zugriff';
+        });
+        return;
+      }
+
       if (cachedMembers != null) {
         return;
       }
@@ -192,6 +204,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
 
     final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
     final syncProvider = context.read<SyncProvider>();
     if (userEmail == null) {
       Toast.show(context, 'Berechtigung konnte nicht geprüft werden');
@@ -226,6 +239,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
       if (result.errorMessage != null) {
         Toast.show(context, result.errorMessage!, type: ToastType.warning);
+        if (result.shouldReloadUi) {
+          unawaited(_reloadAfterActionFailure(userEmail, groupRoleProvider));
+        }
       } else {
         Toast.show(
           context,
@@ -239,7 +255,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       }
     } on UnauthorizedException {
       if (!mounted) return;
-      Toast.show(context, 'Aktion nicht erlaubt', type: ToastType.warning);
+      Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
+      unawaited(_reloadAfterActionFailure(userEmail, groupRoleProvider));
     } catch (_) {
       if (!mounted) return;
       Toast.show(context, 'Rollenänderung konnte nicht gespeichert werden');
@@ -250,6 +267,23 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         });
       }
     }
+  }
+
+  Future<void> _reloadAfterActionFailure(
+    String userEmail,
+    GroupRoleProvider groupRoleProvider,
+  ) async {
+    try {
+      await groupRoleProvider.refreshRole(userEmail, widget.groupId);
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    await _loadMembers();
+  }
+
+  bool _isGroupUnavailableError(int? statusCode) {
+    return statusCode == 403 || statusCode == 404;
   }
 
   @override

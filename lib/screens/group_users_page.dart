@@ -494,7 +494,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                         items.add(
                                           const PopupMenuItem<_MemberAction>(
                                             value: _MemberAction.demoteToMember,
-                                            child: Text('Als Mitglied setzen'),
+                                            child: Text('Bierlistenwart entfernen'),
                                           ),
                                         );
                                       } else {

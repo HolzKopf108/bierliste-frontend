@@ -203,15 +203,15 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     });
 
     try {
-      final members = switch (action) {
+      final result = switch (action) {
         _MemberAction.promoteToWart =>
-          await OfflineGroupUsersService.queuePromoteMember(
+          await OfflineGroupUsersService.promoteMember(
             userEmail,
             widget.groupId,
             member,
           ),
         _MemberAction.demoteToMember =>
-          await OfflineGroupUsersService.queueDemoteMember(
+          await OfflineGroupUsersService.demoteMember(
             userEmail,
             widget.groupId,
             member,
@@ -220,17 +220,26 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       if (!mounted) return;
 
       setState(() {
-        _members = members;
+        _members = result.members;
         _loadErrorMessage = null;
       });
 
-      Toast.show(
-        context,
-        'Rollenänderung gespeichert',
-        type: ToastType.success,
-      );
+      if (result.errorMessage != null) {
+        Toast.show(context, result.errorMessage!, type: ToastType.warning);
+      } else {
+        Toast.show(
+          context,
+          'Rollenänderung gespeichert',
+          type: ToastType.success,
+        );
+      }
 
-      unawaited(syncProvider.markPendingSync());
+      if (result.hasPendingSync) {
+        unawaited(syncProvider.markPendingSync());
+      }
+    } on UnauthorizedException {
+      if (!mounted) return;
+      Toast.show(context, 'Aktion nicht erlaubt', type: ToastType.warning);
     } catch (_) {
       if (!mounted) return;
       Toast.show(context, 'Rollenänderung konnte nicht gespeichert werden');

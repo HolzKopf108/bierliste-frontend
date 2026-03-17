@@ -9,6 +9,18 @@ import 'package:bierliste/services/http_service.dart';
 import 'package:bierliste/services/pending_sync_queue_service.dart';
 import 'package:hive/hive.dart';
 
+class OfflineGroupUsersActionResult {
+  final List<GroupMember> members;
+  final bool hasPendingSync;
+  final String? errorMessage;
+
+  const OfflineGroupUsersActionResult({
+    required this.members,
+    required this.hasPendingSync,
+    this.errorMessage,
+  });
+}
+
 class OfflineGroupUsersService {
   static const _boxName = 'group_member_cache';
   static const _requestTimeout = Duration(seconds: 5);
@@ -95,34 +107,45 @@ class OfflineGroupUsersService {
     }
   }
 
-  static Future<List<GroupMember>> queuePromoteMember(
+  static Future<OfflineGroupUsersActionResult> promoteMember(
     String userEmail,
     int groupId,
     GroupMember member,
   ) async {
-    await _queueRoleChange(
+    final operation = await _queueRoleChange(
       userEmail,
       groupId,
       member,
       targetRole: GroupMemberRole.wart,
       operationType: PendingSyncOperation.promoteGroupMember,
     );
-    return (await getGroupMembers(userEmail, groupId)) ?? [];
+    return _syncQueuedRoleChangeIfPossible(
+      userEmail,
+      groupId,
+      operation,
+      fallbackErrorMessage:
+          'Mitglied konnte nicht zum Bierlistenwart gemacht werden',
+    );
   }
 
-  static Future<List<GroupMember>> queueDemoteMember(
+  static Future<OfflineGroupUsersActionResult> demoteMember(
     String userEmail,
     int groupId,
     GroupMember member,
   ) async {
-    await _queueRoleChange(
+    final operation = await _queueRoleChange(
       userEmail,
       groupId,
       member,
       targetRole: GroupMemberRole.member,
       operationType: PendingSyncOperation.demoteGroupMember,
     );
-    return (await getGroupMembers(userEmail, groupId)) ?? [];
+    return _syncQueuedRoleChangeIfPossible(
+      userEmail,
+      groupId,
+      operation,
+      fallbackErrorMessage: 'Rolle konnte nicht aktualisiert werden',
+    );
   }
 
   static Future<bool> syncPendingOperations(
@@ -225,7 +248,7 @@ class OfflineGroupUsersService {
     return allSuccessful;
   }
 
-  static Future<void> _queueRoleChange(
+  static Future<PendingSyncOperation> _queueRoleChange(
     String userEmail,
     int groupId,
     GroupMember member, {
@@ -246,6 +269,80 @@ class OfflineGroupUsersService {
       payload: {'targetUserId': member.userId},
     );
     await PendingSyncQueueService.addOperation(operation);
+    return operation;
+  }
+
+  static Future<OfflineGroupUsersActionResult> _syncQueuedRoleChangeIfPossible(
+    String userEmail,
+    int groupId,
+    PendingSyncOperation operation, {
+    required String fallbackErrorMessage,
+  }) async {
+    var members = (await getGroupMembers(userEmail, groupId)) ?? [];
+
+    if (!await ConnectivityService.isOnline()) {
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: true,
+      );
+    }
+
+    try {
+      final updatedMember =
+          operation.operationType == PendingSyncOperation.promoteGroupMember
+          ? await GroupApiService().promoteGroupMember(
+              groupId,
+              _targetUserId(operation),
+            )
+          : await GroupApiService().demoteGroupMember(
+              groupId,
+              _targetUserId(operation),
+            );
+
+      await _mergeUpdatedMember(userEmail, groupId, updatedMember);
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      try {
+        await GroupRoleCacheService.refreshGroupRole(userEmail, groupId);
+      } catch (_) {}
+
+      members = (await getGroupMembers(userEmail, groupId)) ?? members;
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } on GroupApiException catch (e) {
+      if (_isPermanentFailure(e.statusCode)) {
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          operation.id,
+        ]);
+        try {
+          members = await refreshGroupMembers(userEmail, groupId);
+        } catch (_) {
+          members = (await getGroupMembers(userEmail, groupId)) ?? members;
+        }
+        try {
+          await GroupRoleCacheService.refreshGroupRole(userEmail, groupId);
+        } catch (_) {}
+
+        return OfflineGroupUsersActionResult(
+          members: members,
+          hasPendingSync: false,
+          errorMessage: _friendlyActionError(e, fallbackErrorMessage),
+        );
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: true,
+      );
+    } catch (_) {
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: true,
+      );
+    }
   }
 
   static Future<void> _replaceMemberRole(
@@ -320,6 +417,24 @@ class OfflineGroupUsersService {
 
   static bool _isPermanentFailure(int? statusCode) {
     return statusCode != null && statusCode >= 400 && statusCode < 500;
+  }
+
+  static String _friendlyActionError(
+    GroupApiException exception,
+    String fallbackMessage,
+  ) {
+    switch (exception.statusCode) {
+      case 403:
+        return 'Du darfst diese Aktion nicht ausführen';
+      case 404:
+        return 'Mitglied wurde nicht gefunden';
+      default:
+        final message = exception.message.trim();
+        if (message.isNotEmpty) {
+          return message;
+        }
+        return fallbackMessage;
+    }
   }
 
   static String _groupMembersKey(String userEmail, int groupId) {

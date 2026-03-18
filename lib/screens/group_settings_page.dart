@@ -38,43 +38,6 @@ class _DecimalSeparatorInputFormatter extends TextInputFormatter {
   }
 }
 
-class _GroupSettingsPriceInputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final text = newValue.text;
-    final commaIndex = text.indexOf(',');
-
-    if (commaIndex < 0) {
-      if (text.length <= 8) {
-        return newValue;
-      }
-
-      return TextEditingValue(
-        text: text.substring(0, 8),
-        selection: const TextSelection.collapsed(offset: 8),
-      );
-    }
-
-    final integerPart = text.substring(0, commaIndex);
-    final decimalPart = text.substring(commaIndex + 1);
-    final limitedIntegerPart = integerPart.length > 8
-        ? integerPart.substring(0, 8)
-        : integerPart;
-    final limitedDecimalPart = decimalPart.length > 2
-        ? decimalPart.substring(0, 2)
-        : decimalPart;
-    final limitedText = '$limitedIntegerPart,$limitedDecimalPart';
-
-    return TextEditingValue(
-      text: limitedText,
-      selection: TextSelection.collapsed(offset: limitedText.length),
-    );
-  }
-}
-
 class GroupSettingsPage extends StatefulWidget {
   final int groupId;
   const GroupSettingsPage({super.key, required this.groupId});
@@ -88,7 +51,6 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   final GroupApiService _groupApiService = GroupApiService();
   final _groupNameController = TextEditingController();
   final _pricePerStrichController = TextEditingController();
-  final _groupIdController = TextEditingController();
 
   bool _isLoading = true;
   bool _isSaving = false;
@@ -99,7 +61,6 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   @override
   void initState() {
     super.initState();
-    _groupIdController.text = widget.groupId.toString();
     _loadGroupSettings();
   }
 
@@ -481,7 +442,6 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   void dispose() {
     _groupNameController.dispose();
     _pricePerStrichController.dispose();
-    _groupIdController.dispose();
     super.dispose();
   }
 
@@ -491,6 +451,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     final ownRole = groupRoleProvider.roleForGroup(widget.groupId);
     final canEditSettings = ownRole == GroupMemberRole.wart;
     final isRoleLoading = groupRoleProvider.isLoadingForGroup(widget.groupId);
+    final theme = Theme.of(context);
 
     if (_isLoading) {
       return Scaffold(
@@ -560,7 +521,6 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
               inputFormatters: <TextInputFormatter>[
                 _DecimalSeparatorInputFormatter(),
                 MoneyInputFormatter(),
-                _GroupSettingsPriceInputFormatter(),
               ],
               decoration: const InputDecoration(
                 labelText: 'Preis pro Strich',
@@ -601,28 +561,81 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                   ? null
                   : _saveSettings,
             ),
-            const SizedBox(height: 32),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.exit_to_app),
-              label: const Text('Gruppe verlassen'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold),
+            const SizedBox(height: 72),
+            Row(
+              children: const [
+                Expanded(child: Divider()),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    'Gefahrenbereich',
+                    style: TextStyle(
+                      color: Colors.red,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 35),
+            Container(
+              decoration: BoxDecoration(
+                color: theme.colorScheme.error.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red),
               ),
-              onPressed: _isLeaving || _isSaving ? null : _leaveGroup,
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: const [
+                      Icon(Icons.warning_amber_rounded, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text(
+                        'Gruppe verlassen',
+                        style: TextStyle(
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Du verlässt diese Gruppe sofort. Dieser Vorgang kann nicht rückgängig gemacht werden.',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      icon: const Icon(Icons.exit_to_app),
+                      label: const Text('GRUPPE VERLASSEN'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      onPressed: _isLeaving || _isSaving ? null : _leaveGroup,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+            Center(
+              child: Text(
+                'Gruppen-ID: ${widget.groupId}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
             ),
             const SizedBox(height: 24),
-            TextField(
-              controller: _groupIdController,
-              readOnly: true,
-              style: Theme.of(context).textTheme.bodySmall,
-              decoration: const InputDecoration(
-                labelText: 'Gruppen-ID',
-                border: OutlineInputBorder(),
-              ),
-            ),
           ],
         ),
       ),

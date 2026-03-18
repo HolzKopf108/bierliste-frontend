@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
-import '../models/group_member.dart';
 import '../providers/sync_provider.dart';
 import '../providers/group_role_provider.dart';
 import '../routes/app_routes.dart';
@@ -482,14 +481,11 @@ class _GroupHomePageState extends State<GroupHomePage> {
   @override
   Widget build(BuildContext context) {
     final syncProvider = context.watch<SyncProvider>();
-    final groupRoleProvider = context.watch<GroupRoleProvider>();
     final currency = (_strichCount * _pricePerStrich).toStringAsFixed(2);
     final groupTitle = widget.groupName?.trim().isNotEmpty == true
         ? widget.groupName!
         : 'Gruppe ${widget.groupId}';
     final pendingSyncAction = _buildPendingSyncAction(syncProvider);
-    final ownRole = groupRoleProvider.roleForGroup(widget.groupId);
-    final canManageGroup = ownRole == GroupMemberRole.wart;
 
     return Scaffold(
       appBar: AppBar(
@@ -618,23 +614,21 @@ class _GroupHomePageState extends State<GroupHomePage> {
                       );
                     },
                   ),
-                  if (canManageGroup) ...[
-                    const SizedBox(height: 20),
-                    const Divider(indent: 16, endIndent: 16),
-                    const SizedBox(height: 20),
-                    ListTile(
-                      leading: const Icon(Icons.handyman),
-                      title: const Text('Gruppeneinstellungen'),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () {
-                        Navigator.pushNamed(
-                          context,
-                          '/groupSettings',
-                          arguments: widget.groupId,
-                        );
-                      },
-                    ),
-                  ],
+                  const SizedBox(height: 20),
+                  const Divider(indent: 16, endIndent: 16),
+                  const SizedBox(height: 20),
+                  ListTile(
+                    leading: const Icon(Icons.handyman),
+                    title: const Text('Gruppeneinstellungen'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () {
+                      Navigator.pushNamed(
+                        context,
+                        '/groupSettings',
+                        arguments: widget.groupId,
+                      );
+                    },
+                  ),
                   const SizedBox(height: 75),
                 ],
               ),

@@ -7,8 +7,10 @@ import 'package:provider/provider.dart';
 import '../providers/sync_provider.dart';
 import '../providers/group_role_provider.dart';
 import '../routes/app_routes.dart';
+import '../services/connectivity_service.dart';
 import '../services/group_counter_api_service.dart';
 import '../services/http_service.dart';
+import '../services/offline_group_settings_service.dart';
 import '../services/offline_strich_service.dart';
 import '../widgets/toast.dart';
 import '../providers/auth_provider.dart';
@@ -36,6 +38,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
   bool _isLoading = true;
   bool _isSubmitting = false;
   String? _loadErrorMessage;
+  String? _groupName;
   SyncProvider? _syncProvider;
   bool _wasOnline = false;
   bool _wasSyncing = false;
@@ -43,8 +46,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
   @override
   void initState() {
     super.initState();
+    _groupName = widget.groupName?.trim();
     _loadCounter();
     _loadGroupRole();
+    _loadGroupName();
   }
 
   @override
@@ -95,6 +100,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
 
     if (shouldReload && mounted && !_isLoading && !_isSubmitting) {
       _loadCounter(showLoading: false, triggerSync: false);
+      unawaited(_loadGroupName());
     }
   }
 
@@ -272,11 +278,59 @@ class _GroupHomePageState extends State<GroupHomePage> {
   }
 
   String? _groupNameForArgs() {
-    final groupName = widget.groupName?.trim();
+    final groupName = _groupName?.trim();
     if (groupName == null || groupName.isEmpty) {
       return null;
     }
     return groupName;
+  }
+
+  Future<void> _loadGroupName() async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+    if (userEmail == null) {
+      return;
+    }
+
+    final cachedSettings = await OfflineGroupSettingsService.getGroupSettings(
+      userEmail,
+      widget.groupId,
+    );
+    if (cachedSettings != null && mounted) {
+      setState(() {
+        _groupName = cachedSettings.name;
+      });
+    }
+
+    if (!await ConnectivityService.isOnline()) {
+      return;
+    }
+
+    try {
+      final freshSettings =
+          await OfflineGroupSettingsService.refreshGroupSettings(
+            userEmail,
+            widget.groupId,
+          );
+      if (!mounted) return;
+      setState(() {
+        _groupName = freshSettings.name;
+      });
+    } on UnauthorizedException {
+      return;
+    } catch (_) {
+      return;
+    }
+  }
+
+  Future<void> _openGroupSettings() async {
+    await Navigator.pushNamed(
+      context,
+      '/groupSettings',
+      arguments: widget.groupId,
+    );
+    if (!mounted) return;
+    await _loadCounter(showLoading: false);
+    await _loadGroupName();
   }
 
   Future<void> _handlePendingSyncTap(SyncProvider syncProvider) async {
@@ -482,8 +536,8 @@ class _GroupHomePageState extends State<GroupHomePage> {
   Widget build(BuildContext context) {
     final syncProvider = context.watch<SyncProvider>();
     final currency = (_strichCount * _pricePerStrich).toStringAsFixed(2);
-    final groupTitle = widget.groupName?.trim().isNotEmpty == true
-        ? widget.groupName!
+    final groupTitle = _groupName?.trim().isNotEmpty == true
+        ? _groupName!
         : 'Gruppe ${widget.groupId}';
     final pendingSyncAction = _buildPendingSyncAction(syncProvider);
 
@@ -621,13 +675,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
                     leading: const Icon(Icons.handyman),
                     title: const Text('Gruppeneinstellungen'),
                     trailing: const Icon(Icons.chevron_right),
-                    onTap: () {
-                      Navigator.pushNamed(
-                        context,
-                        '/groupSettings',
-                        arguments: widget.groupId,
-                      );
-                    },
+                    onTap: _openGroupSettings,
                   ),
                   const SizedBox(height: 75),
                 ],

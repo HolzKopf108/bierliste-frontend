@@ -374,21 +374,109 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       'Beispiel: 2,50 EUR bei 1,00 EUR pro Strich zieht 2 Striche ab. '
       'Wenn deaktiviert, sind nur Vielfache des Preises pro Strich erlaubt.';
 
-  Widget _buildMoneySettlementTitle() {
-    return Row(
-      children: [
-        const Expanded(
-          child: Text('Beliebige Geldbeträge für Abzüge erlauben'),
-        ),
-        Tooltip(
-          message: _moneySettlementHelpMessage,
-          child: Icon(
-            Icons.info_outline,
-            size: 20,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-      ],
+  String get _onlyWartsCanBookForOthersHelpMessage =>
+      'Wenn aktiviert, dürfen nur Bierlistenwarte für andere Mitglieder '
+      'buchen. Wenn deaktiviert, dürfen alle Mitglieder auch für andere '
+      'buchen.';
+
+  Future<void> _showOnlyWartsCanBookForOthersHelpDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Hinweis zu Buchungen für andere'),
+          content: Text(_onlyWartsCanBookForOthersHelpMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Schließen'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showMoneySettlementHelpDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Hinweis zu Geldabzügen'),
+          content: Text(_moneySettlementHelpMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Schließen'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSettingInfoButton(VoidCallback onPressed) {
+    return IconButton(
+      tooltip: 'Hinweis anzeigen',
+      onPressed: onPressed,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 20, height: 20),
+      splashRadius: 18,
+      icon: Icon(
+        Icons.info_outline,
+        size: 20,
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+
+  Widget _buildSwitchSettingTile({
+    required bool canEditSettings,
+    required String title,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+    required VoidCallback onInfoTap,
+  }) {
+    final readOnly = _isReadOnly(canEditSettings);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        minLeadingWidth: 24,
+        leading: _buildSettingInfoButton(onInfoTap),
+        title: Text(title),
+        trailing: Switch(value: value, onChanged: readOnly ? null : onChanged),
+        onTap: readOnly
+            ? null
+            : () {
+                onChanged(!value);
+              },
+      ),
+    );
+  }
+
+  Widget _buildBookingForOthersTile(bool canEditSettings) {
+    return _buildSwitchSettingTile(
+      canEditSettings: canEditSettings,
+      title: 'Nur Bierlistenwarte dürfen für andere buchen',
+      value: _onlyWartsCanBookForOthers,
+      onChanged: (value) {
+        setState(() => _onlyWartsCanBookForOthers = value);
+      },
+      onInfoTap: _showOnlyWartsCanBookForOthersHelpDialog,
+    );
+  }
+
+  Widget _buildMoneySettlementTile(bool canEditSettings) {
+    return _buildSwitchSettingTile(
+      canEditSettings: canEditSettings,
+      title: 'Beliebige Geldbeträge für Abzüge erlauben',
+      value: _allowArbitraryMoneySettlements,
+      onChanged: (value) {
+        setState(() => _allowArbitraryMoneySettlements = value);
+      },
+      onInfoTap: _showMoneySettlementHelpDialog,
     );
   }
 
@@ -519,7 +607,9 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            const SizedBox(height: 5),
             _buildRoleLoadingHint(isRoleLoading),
+            const SizedBox(height: 30),
             _buildPermissionHint(isRoleLoading, canEditSettings),
             TextFormField(
               controller: _groupNameController,
@@ -537,7 +627,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 return null;
               },
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 30),
             TextFormField(
               controller: _pricePerStrichController,
               readOnly: _isReadOnly(canEditSettings),
@@ -556,31 +646,11 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
               ),
               validator: _validatePricePerStrich,
             ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Nur Bierlistenwarte dürfen für andere buchen'),
-              value: _onlyWartsCanBookForOthers,
-              onChanged: _isReadOnly(canEditSettings)
-                  ? null
-                  : (value) {
-                      setState(() => _onlyWartsCanBookForOthers = value);
-                    },
-            ),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: _buildMoneySettlementTitle(),
-              subtitle: const Text(
-                'Wenn aktiviert, wird auf ganze Striche abgerundet und der Restbetrag ignoriert.',
-              ),
-              value: _allowArbitraryMoneySettlements,
-              onChanged: _isReadOnly(canEditSettings)
-                  ? null
-                  : (value) {
-                      setState(() => _allowArbitraryMoneySettlements = value);
-                    },
-            ),
+            const SizedBox(height: 30),
+            _buildBookingForOthersTile(canEditSettings),
             const SizedBox(height: 20),
+            _buildMoneySettlementTile(canEditSettings),
+            const SizedBox(height: 30),
             ElevatedButton.icon(
               icon: _isSaving
                   ? const SizedBox(
@@ -601,7 +671,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                   ? null
                   : _saveSettings,
             ),
-            const SizedBox(height: 72),
+            const SizedBox(height: 80),
             Row(
               children: const [
                 Expanded(child: Divider()),
@@ -618,7 +688,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 Expanded(child: Divider()),
               ],
             ),
-            const SizedBox(height: 35),
+            const SizedBox(height: 40),
             Container(
               decoration: BoxDecoration(
                 color: theme.colorScheme.error.withValues(alpha: 0.1),

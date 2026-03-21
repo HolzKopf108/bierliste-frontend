@@ -35,6 +35,7 @@ class GroupUsersPage extends StatefulWidget {
 class _GroupUsersPageState extends State<GroupUsersPage> {
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
+  double _pricePerStrich = 0;
   bool _isLoading = true;
   int? _updatingMemberUserId;
   String? _loadErrorMessage;
@@ -46,6 +47,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   void initState() {
     super.initState();
     _loadMembers();
+    unawaited(_loadDisplaySettings());
   }
 
   @override
@@ -222,6 +224,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         !_isLoading &&
         _updatingMemberUserId == null) {
       unawaited(_loadMembers(showLoading: false));
+      unawaited(_loadDisplaySettings());
     }
   }
 
@@ -534,19 +537,70 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       userEmail,
       widget.groupId,
     );
+    if (cachedSettings != null && mounted) {
+      setState(() {
+        _pricePerStrich = cachedSettings.pricePerStrich;
+      });
+    }
     if (!await ConnectivityService.isOnline()) {
       return cachedSettings;
     }
 
     try {
-      return await OfflineGroupSettingsService.refreshGroupSettings(
-        userEmail,
-        widget.groupId,
-      );
+      final freshSettings =
+          await OfflineGroupSettingsService.refreshGroupSettings(
+            userEmail,
+            widget.groupId,
+          );
+      if (mounted) {
+        setState(() {
+          _pricePerStrich = freshSettings.pricePerStrich;
+        });
+      }
+      return freshSettings;
     } on UnauthorizedException {
       rethrow;
     } catch (_) {
       return cachedSettings;
+    }
+  }
+
+  Future<void> _loadDisplaySettings() async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+    if (userEmail == null) {
+      return;
+    }
+
+    final cachedSettings = await OfflineGroupSettingsService.getGroupSettings(
+      userEmail,
+      widget.groupId,
+    );
+    if (cachedSettings != null && mounted) {
+      setState(() {
+        _pricePerStrich = cachedSettings.pricePerStrich;
+      });
+    }
+
+    if (!await ConnectivityService.isOnline()) {
+      return;
+    }
+
+    try {
+      final freshSettings =
+          await OfflineGroupSettingsService.refreshGroupSettings(
+            userEmail,
+            widget.groupId,
+          );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pricePerStrich = freshSettings.pricePerStrich;
+      });
+    } on UnauthorizedException {
+      return;
+    } catch (_) {
+      return;
     }
   }
 
@@ -765,6 +819,14 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return value.toStringAsFixed(2).replaceAll('.', ',');
   }
 
+  String? _memberAmountText(GroupMember member) {
+    if (_pricePerStrich <= 0) {
+      return null;
+    }
+
+    return '${_formatMoney(member.strichCount * _pricePerStrich)} €';
+  }
+
   bool _isGroupUnavailableError(int? statusCode) {
     return statusCode == 403 || statusCode == 404;
   }
@@ -851,6 +913,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                 itemBuilder: (context, index) {
                   final member = sortedMembers[index];
                   final strichLabel = _strichLabel(member.strichCount);
+                  final memberAmountText = _memberAmountText(member);
                   final showWartBadge = member.role == GroupMemberRole.wart;
                   final showMemberMenu = canManageMembers;
                   final isUpdatingMember =
@@ -889,8 +952,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                   const SizedBox(height: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
+                                      horizontal: 7,
+                                      vertical: 3,
                                     ),
                                     decoration: BoxDecoration(
                                       color: theme.colorScheme.primaryContainer,
@@ -901,7 +964,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                       children: [
                                         Icon(
                                           Icons.verified_user,
-                                          size: 14,
+                                          size: 13,
                                           color: theme
                                               .colorScheme
                                               .onPrimaryContainer,
@@ -928,7 +991,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                           ),
                           const SizedBox(width: 12),
                           SizedBox(
-                            width: 72,
+                            width: 96,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
@@ -942,7 +1005,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                     color: primaryColor,
                                   ),
                                 ),
-                                const SizedBox(height: 2),
+                                const SizedBox(height: 1),
                                 Text(
                                   strichLabel,
                                   maxLines: 1,
@@ -952,6 +1015,19 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                     color: theme.hintColor,
                                   ),
                                 ),
+                                const SizedBox(height: 1),
+                                if (memberAmountText != null) ...[
+                                  Text(
+                                    memberAmountText,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),

@@ -82,6 +82,47 @@ class GroupCounterApiService {
     }
   }
 
+  Future<GroupCounter> incrementGroupMemberCounter(
+    int groupId,
+    int targetUserId,
+    int amount,
+  ) async {
+    if (amount < 1) {
+      throw GroupCounterApiException('Ungültiger Inkrement-Wert');
+    }
+
+    try {
+      final response = await HttpService.authorizedRequest(
+        '$_groupsBase/$groupId/members/$targetUserId/counter/increment',
+        'POST',
+        body: IncrementRequest(amount: amount).toJson(),
+      );
+      _ensureSuccess(
+        response,
+        'Counter des Mitglieds konnte nicht aktualisiert werden',
+      );
+
+      final data = _decode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw GroupCounterApiException('Ungültige Serverantwort');
+      }
+
+      return GroupCounter.fromJson(data);
+    } on UnauthorizedException {
+      rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint(
+        'incrementGroupMemberCounter Token-Refresh-Fehler: ${e.message}',
+      );
+      throw GroupCounterApiException(e.message);
+    } on GroupCounterApiException {
+      rethrow;
+    } catch (e) {
+      debugPrint('incrementGroupMemberCounter Fehler: $e');
+      throw GroupCounterApiException('Netzwerkfehler');
+    }
+  }
+
   Future<bool> syncPendingCounterOperations(
     String userEmail, {
     int? groupId,

@@ -20,7 +20,13 @@ import '../widgets/toast.dart';
 
 enum SortOption { alphabet, strichCount }
 
-enum _MemberAction { settleMoney, settleStriche, promoteToWart, demoteToMember }
+enum _MemberAction {
+  bookStriche,
+  settleMoney,
+  settleStriche,
+  promoteToWart,
+  demoteToMember,
+}
 
 class GroupUsersPage extends StatefulWidget {
   final int groupId;
@@ -35,6 +41,7 @@ class GroupUsersPage extends StatefulWidget {
 class _GroupUsersPageState extends State<GroupUsersPage> {
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
+  GroupSettings? _groupSettings;
   double _pricePerStrich = 0;
   bool _isLoading = true;
   int? _updatingMemberUserId;
@@ -259,6 +266,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     _MemberAction action,
   ) async {
     switch (action) {
+      case _MemberAction.bookStriche:
+        await _handleBookStricheAction(member);
+        return;
       case _MemberAction.promoteToWart:
       case _MemberAction.demoteToMember:
         await _handleRoleAction(member, action);
@@ -270,6 +280,40 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         await _handleStricheSettlementAction(member);
         return;
     }
+  }
+
+  Future<void> _handleBookStricheAction(GroupMember member) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final amount = await _showCounterIncrementDialog(member);
+    if (!mounted || amount == null) {
+      return;
+    }
+
+    final successMessage = amount == 1
+        ? 'Strich für ${member.username} gebucht'
+        : '$amount Striche für ${member.username} gebucht';
+    final pendingMessage = amount == 1
+        ? 'Strich für ${member.username} gebucht und wird synchronisiert'
+        : '$amount Striche für ${member.username} gebucht und werden synchronisiert';
+
+    await _handleMemberActionExecution(
+      member,
+      execute: (userEmail) => OfflineGroupUsersService.incrementMemberCounter(
+        userEmail,
+        widget.groupId,
+        member,
+        amount,
+        affectsCurrentUser: _isOwnMember(member),
+      ),
+      successMessage: successMessage,
+      pendingMessage: pendingMessage,
+      fallbackErrorMessage: 'Striche konnten nicht gespeichert werden',
+      toastActionLabel: 'Rückgängig',
+      onToastActionTap: () {},
+    );
   }
 
   Future<void> _handleRoleAction(
@@ -412,7 +456,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       return;
     }
 
-    await _handleSettlementAction(
+    await _handleMemberActionExecution(
       member,
       execute: (userEmail) => OfflineGroupUsersService.settleMemberMoney(
         userEmail,
@@ -449,7 +493,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       return;
     }
 
-    await _handleSettlementAction(
+    await _handleMemberActionExecution(
       member,
       execute: (userEmail) => OfflineGroupUsersService.settleMemberStriche(
         userEmail,
@@ -464,13 +508,15 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     );
   }
 
-  Future<void> _handleSettlementAction(
+  Future<void> _handleMemberActionExecution(
     GroupMember member, {
     required Future<OfflineGroupUsersActionResult> Function(String userEmail)
     execute,
     required String successMessage,
     required String pendingMessage,
     required String fallbackErrorMessage,
+    String? toastActionLabel,
+    VoidCallback? onToastActionTap,
   }) async {
     final userEmail = context.read<AuthProvider>().userEmail;
     final groupRoleProvider = context.read<GroupRoleProvider>();
@@ -506,6 +552,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
           context,
           result.hasPendingSync ? pendingMessage : successMessage,
           type: result.hasPendingSync ? ToastType.info : ToastType.success,
+          actionLabel: toastActionLabel,
+          onActionTap: onToastActionTap,
         );
       }
 
@@ -539,7 +587,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     );
     if (cachedSettings != null && mounted) {
       setState(() {
-        _pricePerStrich = cachedSettings.pricePerStrich;
+        _applyDisplaySettings(cachedSettings);
       });
     }
     if (!await ConnectivityService.isOnline()) {
@@ -554,7 +602,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
           );
       if (mounted) {
         setState(() {
-          _pricePerStrich = freshSettings.pricePerStrich;
+          _applyDisplaySettings(freshSettings);
         });
       }
       return freshSettings;
@@ -577,7 +625,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     );
     if (cachedSettings != null && mounted) {
       setState(() {
-        _pricePerStrich = cachedSettings.pricePerStrich;
+        _applyDisplaySettings(cachedSettings);
       });
     }
 
@@ -595,13 +643,18 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         return;
       }
       setState(() {
-        _pricePerStrich = freshSettings.pricePerStrich;
+        _applyDisplaySettings(freshSettings);
       });
     } on UnauthorizedException {
       return;
     } catch (_) {
       return;
     }
+  }
+
+  void _applyDisplaySettings(GroupSettings settings) {
+    _groupSettings = settings;
+    _pricePerStrich = settings.pricePerStrich;
   }
 
   Future<double?> _showMoneySettlementDialog(
@@ -694,8 +747,25 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return amount;
   }
 
-  Future<int?> _showStricheSettlementDialog(GroupMember member) async {
+  Future<int?> _showCounterIncrementDialog(GroupMember member) {
+    return _showStrichAmountDialog(
+      title: 'Striche für ${member.username} buchen',
+    );
+  }
+
+  Future<int?> _showStricheSettlementDialog(GroupMember member) {
+    return _showStrichAmountDialog(
+      title: 'Striche bei ${member.username} abziehen',
+    );
+  }
+
+  Future<int?> _showStrichAmountDialog({required String title}) async {
     final controller = TextEditingController();
+    controller.text = '1';
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: controller.text.length,
+    );
     final amount = await showDialog<int>(
       context: context,
       builder: (dialogContext) {
@@ -716,7 +786,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text('Striche bei ${member.username} abziehen'),
+              title: Text(title),
               content: TextField(
                 controller: controller,
                 autofocus: true,
@@ -784,6 +854,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     if (!mounted) return;
 
     await _loadMembers(showLoading: false);
+    await _loadDisplaySettings();
   }
 
   bool _isOwnMember(GroupMember member) {
@@ -827,6 +898,131 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return '${_formatMoney(member.strichCount * _pricePerStrich)} €';
   }
 
+  bool _canBookForOtherMembers(GroupMemberRole? ownRole) {
+    if (ownRole == GroupMemberRole.wart) {
+      return true;
+    }
+
+    if (ownRole != GroupMemberRole.member) {
+      return false;
+    }
+
+    final groupSettings = _groupSettings;
+    if (groupSettings == null) {
+      return false;
+    }
+
+    return !groupSettings.onlyWartsCanBookForOthers;
+  }
+
+  List<PopupMenuEntry<_MemberAction>> _buildMemberMenuEntries(
+    GroupMember member,
+    GroupMemberRole? ownRole,
+  ) {
+    final theme = Theme.of(context);
+    final entries = <PopupMenuEntry<_MemberAction>>[];
+    final canBookForOthers = _canBookForOtherMembers(ownRole);
+    final canManageMembers = ownRole == GroupMemberRole.wart;
+
+    if (canBookForOthers) {
+      entries.add(
+        _buildMenuItem(
+          action: _MemberAction.bookStriche,
+          icon: Icons.add_circle_outline_rounded,
+          label: 'Striche buchen',
+          theme: theme,
+          emphasized: true,
+        ),
+      );
+    }
+
+    if (canManageMembers) {
+      if (entries.isNotEmpty) {
+        entries.add(const PopupMenuDivider(height: 10));
+      }
+
+      entries.add(
+        _buildMenuItem(
+          action: _MemberAction.settleMoney,
+          icon: Icons.payments_outlined,
+          label: 'Geld abziehen',
+          theme: theme,
+        ),
+      );
+      entries.add(
+        _buildMenuItem(
+          action: _MemberAction.settleStriche,
+          icon: Icons.remove_circle_outline_rounded,
+          label: 'Striche abziehen',
+          theme: theme,
+        ),
+      );
+      entries.add(const PopupMenuDivider(height: 10));
+      entries.add(
+        _buildMenuItem(
+          action: member.role == GroupMemberRole.wart
+              ? _MemberAction.demoteToMember
+              : _MemberAction.promoteToWart,
+          icon: member.role == GroupMemberRole.wart
+              ? Icons.person_remove_alt_1_outlined
+              : Icons.verified_user_outlined,
+          label: member.role == GroupMemberRole.wart
+              ? 'Bierlistenwart entfernen'
+              : 'Zum Bierlistenwart machen',
+          theme: theme,
+        ),
+      );
+    }
+
+    return entries;
+  }
+
+  PopupMenuItem<_MemberAction> _buildMenuItem({
+    required _MemberAction action,
+    required IconData icon,
+    required String label,
+    required ThemeData theme,
+    bool emphasized = false,
+  }) {
+    final colorScheme = theme.colorScheme;
+    final foregroundColor = emphasized
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurface;
+    final iconColor = emphasized
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onSurfaceVariant;
+
+    return PopupMenuItem<_MemberAction>(
+      value: action,
+      child: Container(
+        padding: emphasized
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 8)
+            : EdgeInsets.zero,
+        decoration: emphasized
+            ? BoxDecoration(
+                color: colorScheme.primaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              )
+            : null,
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: iconColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: foregroundColor,
+                  fontWeight: emphasized ? FontWeight.w600 : FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   bool _isGroupUnavailableError(int? statusCode) {
     return statusCode == 403 || statusCode == 404;
   }
@@ -838,7 +1034,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     final ownRole = context.watch<GroupRoleProvider>().roleForGroup(
       widget.groupId,
     );
-    final canManageMembers = ownRole == GroupMemberRole.wart;
     final sortedMembers = _sortedMembers();
 
     return Scaffold(
@@ -912,10 +1107,11 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                 itemCount: sortedMembers.length,
                 itemBuilder: (context, index) {
                   final member = sortedMembers[index];
+                  final menuEntries = _buildMemberMenuEntries(member, ownRole);
                   final strichLabel = _strichLabel(member.strichCount);
                   final memberAmountText = _memberAmountText(member);
                   final showWartBadge = member.role == GroupMemberRole.wart;
-                  final showMemberMenu = canManageMembers;
+                  final showMemberMenu = menuEntries.isNotEmpty;
                   final isUpdatingMember =
                       _updatingMemberUserId == member.userId;
 
@@ -1043,45 +1239,15 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                     ),
                                   )
                                 : PopupMenuButton<_MemberAction>(
-                                    tooltip: 'Mitglied verwalten',
+                                    tooltip: 'Aktionen',
+                                    icon: const Icon(Icons.more_horiz_rounded),
+                                    position: PopupMenuPosition.under,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
                                     onSelected: (action) =>
                                         _handlePopupAction(member, action),
-                                    itemBuilder: (context) {
-                                      final items =
-                                          <PopupMenuEntry<_MemberAction>>[
-                                            const PopupMenuItem<_MemberAction>(
-                                              value: _MemberAction.settleMoney,
-                                              child: Text('Geld abziehen'),
-                                            ),
-                                            const PopupMenuItem<_MemberAction>(
-                                              value:
-                                                  _MemberAction.settleStriche,
-                                              child: Text('Striche abziehen'),
-                                            ),
-                                            const PopupMenuDivider(),
-                                          ];
-
-                                      if (member.role == GroupMemberRole.wart) {
-                                        items.add(
-                                          const PopupMenuItem<_MemberAction>(
-                                            value: _MemberAction.demoteToMember,
-                                            child: Text(
-                                              'Bierlistenwart entfernen',
-                                            ),
-                                          ),
-                                        );
-                                      } else {
-                                        items.add(
-                                          const PopupMenuItem<_MemberAction>(
-                                            value: _MemberAction.promoteToWart,
-                                            child: Text(
-                                              'Zum Bierlistenwart machen',
-                                            ),
-                                          ),
-                                        );
-                                      }
-                                      return items;
-                                    },
+                                    itemBuilder: (context) => menuEntries,
                                   ),
                           ],
                         ],

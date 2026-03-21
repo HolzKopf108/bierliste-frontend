@@ -202,7 +202,7 @@ class OfflineStrichService {
           }
 
           if (operation.domain != PendingSyncOperation.domainGroupUsers ||
-              !_isSettlementOperation(operation)) {
+              !_isMemberStrichOperation(operation)) {
             return false;
           }
 
@@ -250,7 +250,12 @@ class OfflineStrichService {
     return _localStrichDelta(operation);
   }
 
-  static bool _isSettlementOperation(PendingSyncOperation operation) {
+  static bool _isMemberStrichOperation(PendingSyncOperation operation) {
+    if (operation.operationType ==
+        PendingSyncOperation.incrementGroupMemberCounter) {
+      return true;
+    }
+
     return operation.operationType ==
             PendingSyncOperation.settleGroupMemberMoney ||
         operation.operationType ==

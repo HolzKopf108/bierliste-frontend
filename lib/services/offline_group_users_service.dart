@@ -5,6 +5,7 @@ import 'package:bierliste/models/group_settlement_result.dart';
 import 'package:bierliste/models/pending_sync_operation.dart';
 import 'package:bierliste/services/connectivity_service.dart';
 import 'package:bierliste/services/group_api_service.dart';
+import 'package:bierliste/services/group_counter_api_service.dart';
 import 'package:bierliste/services/group_role_cache_service.dart';
 import 'package:bierliste/services/group_settlement_api_service.dart';
 import 'package:bierliste/services/http_service.dart';
@@ -232,6 +233,32 @@ class OfflineGroupUsersService {
     );
   }
 
+  static Future<OfflineGroupUsersActionResult> incrementMemberCounter(
+    String userEmail,
+    int groupId,
+    GroupMember member,
+    int amount, {
+    required bool affectsCurrentUser,
+  }) async {
+    if (amount <= 0) {
+      final members = await _currentMembers(userEmail, groupId);
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        errorMessage: 'Ungültige Anzahl',
+      );
+    }
+
+    return _queueAndSyncCounterIncrement(
+      userEmail,
+      groupId,
+      member,
+      amount,
+      affectsCurrentUser: affectsCurrentUser,
+      fallbackErrorMessage: 'Striche konnten nicht gespeichert werden',
+    );
+  }
+
   static int? calculateMoneySettlementStriche(
     double amount,
     double pricePerStrich, {
@@ -358,6 +385,28 @@ class OfflineGroupUsersService {
               resolvedCount,
             );
           }
+        } else if (_isCounterIncrementOperation(operation)) {
+          final resolvedCount = await _syncCounterIncrementOperation(operation);
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          final updatedMembers = await _membersAfterSuccessfulCounterIncrement(
+            userEmail,
+            operation.groupId,
+            _targetUserId(operation),
+            resolvedCount,
+          );
+          final effectiveCount = _resolvedCountFromMembers(
+            updatedMembers,
+            _targetUserId(operation),
+            fallbackCount: resolvedCount,
+          );
+          if (_affectsCurrentUser(operation) && effectiveCount != null) {
+            await OfflineStrichService.saveLastOnlineCounter(
+              userEmail,
+              operation.groupId,
+              effectiveCount,
+            );
+          }
         } else {
           continue;
         }
@@ -385,6 +434,21 @@ class OfflineGroupUsersService {
           await PendingSyncQueueService.saveOperations(userEmail, operations);
         }
       } on GroupSettlementApiException catch (e) {
+        allSuccessful = false;
+        if (_isPermanentFailure(e.statusCode)) {
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          try {
+            await refreshGroupMembers(userEmail, operation.groupId);
+          } catch (_) {}
+        } else {
+          operations = _replaceOperation(
+            operations,
+            PendingSyncQueueService.scheduleRetry(operation),
+          );
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+        }
+      } on GroupCounterApiException catch (e) {
         allSuccessful = false;
         if (_isPermanentFailure(e.statusCode)) {
           operations.removeWhere((entry) => entry.id == operation.id);
@@ -525,6 +589,106 @@ class OfflineGroupUsersService {
     }
   }
 
+  static Future<OfflineGroupUsersActionResult> _queueAndSyncCounterIncrement(
+    String userEmail,
+    int groupId,
+    GroupMember member,
+    int amount, {
+    required bool affectsCurrentUser,
+    required String fallbackErrorMessage,
+  }) async {
+    final previousMembers = await _currentMembers(userEmail, groupId);
+    final optimisticMembers = _applySettlementDeltaToMembers(
+      previousMembers,
+      member.userId,
+      amount,
+      fallbackMember: member,
+      addIfMissing: true,
+    );
+    await saveGroupMembers(userEmail, groupId, optimisticMembers);
+
+    final operation = PendingSyncQueueService.createOperation(
+      userEmail: userEmail,
+      domain: PendingSyncOperation.domainGroupUsers,
+      operationType: PendingSyncOperation.incrementGroupMemberCounter,
+      groupId: groupId,
+      payload: {
+        'targetUserId': member.userId,
+        'amount': amount,
+        'localStrichDelta': amount,
+        'affectsCurrentUser': affectsCurrentUser,
+      },
+    );
+    await PendingSyncQueueService.addOperation(operation);
+
+    if (!await ConnectivityService.isOnline()) {
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    }
+
+    try {
+      final resolvedCount = await _syncCounterIncrementOperation(operation);
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      final syncedMembers = await _membersAfterSuccessfulCounterIncrement(
+        userEmail,
+        groupId,
+        member.userId,
+        resolvedCount,
+      );
+      final effectiveCount = _resolvedCountFromMembers(
+        syncedMembers,
+        member.userId,
+        fallbackCount: resolvedCount,
+      );
+      if (affectsCurrentUser && effectiveCount != null) {
+        await OfflineStrichService.saveLastOnlineCounter(
+          userEmail,
+          groupId,
+          effectiveCount,
+        );
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: syncedMembers,
+        hasPendingSync: false,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } on GroupCounterApiException catch (e) {
+      if (_isPermanentFailure(e.statusCode)) {
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          operation.id,
+        ]);
+        final restoredMembers = await _restoreMembersAfterPermanentFailure(
+          userEmail,
+          groupId,
+          previousMembers,
+        );
+        return OfflineGroupUsersActionResult(
+          members: restoredMembers,
+          hasPendingSync: false,
+          shouldReloadUi: _shouldReloadUi(e.statusCode),
+          errorMessage: _friendlyCounterIncrementError(
+            e,
+            fallbackMessage: fallbackErrorMessage,
+          ),
+        );
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    } catch (_) {
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    }
+  }
+
   static Future<OfflineGroupUsersActionResult> _queueAndSyncSettlement(
     String userEmail,
     int groupId,
@@ -649,6 +813,15 @@ class OfflineGroupUsersService {
       throw const FormatException('Settlement ohne StrichCount');
     }
 
+    return _applyResolvedStrichCount(userEmail, groupId, targetUserId, count);
+  }
+
+  static Future<List<GroupMember>> _applyResolvedStrichCount(
+    String userEmail,
+    int groupId,
+    int targetUserId,
+    int count,
+  ) async {
     final members = await _currentMembers(userEmail, groupId);
     final updatedMembers = _setMemberStrichCount(
       members,
@@ -678,6 +851,19 @@ class OfflineGroupUsersService {
     );
   }
 
+  static Future<List<GroupMember>> _membersAfterSuccessfulCounterIncrement(
+    String userEmail,
+    int groupId,
+    int targetUserId,
+    int count,
+  ) async {
+    if (await _hasPendingGroupUserOperations(userEmail, groupId)) {
+      return refreshGroupMembers(userEmail, groupId);
+    }
+
+    return _applyResolvedStrichCount(userEmail, groupId, targetUserId, count);
+  }
+
   static Future<GroupSettlementResult> _syncSettlementOperation(
     PendingSyncOperation operation,
   ) {
@@ -702,6 +888,17 @@ class OfflineGroupUsersService {
     throw UnsupportedError(
       'Settlement-Operation ${operation.operationType} wird nicht unterstützt',
     );
+  }
+
+  static Future<int> _syncCounterIncrementOperation(
+    PendingSyncOperation operation,
+  ) async {
+    final counter = await GroupCounterApiService().incrementGroupMemberCounter(
+      operation.groupId,
+      _targetUserId(operation),
+      _intAmount(operation),
+    );
+    return counter.count;
   }
 
   static Future<List<GroupMember>> _restoreMembersAfterPermanentFailure(
@@ -749,7 +946,7 @@ class OfflineGroupUsersService {
         continue;
       }
 
-      if (_isSettlementOperation(operation)) {
+      if (_changesMemberStrichCount(operation)) {
         effectiveMembers = _applySettlementDeltaToMembers(
           effectiveMembers,
           _targetUserId(operation),
@@ -984,13 +1181,35 @@ class OfflineGroupUsersService {
     int targetUserId,
     GroupSettlementResult settlement,
   ) {
+    return _resolvedCountFromMembers(
+      members,
+      targetUserId,
+      fallbackCount: settlement.resolvedStrichCount,
+    );
+  }
+
+  static int? _resolvedCountFromMembers(
+    List<GroupMember> members,
+    int targetUserId, {
+    int? fallbackCount,
+  }) {
     for (final member in members) {
       if (member.userId == targetUserId) {
         return member.strichCount;
       }
     }
 
-    return settlement.resolvedStrichCount;
+    return fallbackCount;
+  }
+
+  static bool _isCounterIncrementOperation(PendingSyncOperation operation) {
+    return operation.operationType ==
+        PendingSyncOperation.incrementGroupMemberCounter;
+  }
+
+  static bool _changesMemberStrichCount(PendingSyncOperation operation) {
+    return _isCounterIncrementOperation(operation) ||
+        _isSettlementOperation(operation);
   }
 
   static bool _isSettlementOperation(PendingSyncOperation operation) {
@@ -1046,6 +1265,23 @@ class OfflineGroupUsersService {
         return operationType == PendingSyncOperation.settleGroupMemberMoney
             ? 'Ungültiger Betrag'
             : 'Ungültige Anzahl';
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Mitglied oder Gruppe nicht gefunden';
+      default:
+        final message = exception.message.trim();
+        return message.isNotEmpty ? message : fallbackMessage;
+    }
+  }
+
+  static String _friendlyCounterIncrementError(
+    GroupCounterApiException exception, {
+    required String fallbackMessage,
+  }) {
+    switch (exception.statusCode) {
+      case 400:
+        return 'Ungültige Anzahl';
       case 403:
         return 'Keine Berechtigung';
       case 404:

@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:bierliste/models/group_member.dart';
+import 'package:bierliste/models/group_settlement_result.dart';
 import 'package:bierliste/models/pending_sync_operation.dart';
 import 'package:bierliste/services/connectivity_service.dart';
 import 'package:bierliste/services/group_api_service.dart';
 import 'package:bierliste/services/group_role_cache_service.dart';
+import 'package:bierliste/services/group_settlement_api_service.dart';
 import 'package:bierliste/services/http_service.dart';
+import 'package:bierliste/services/offline_strich_service.dart';
 import 'package:bierliste/services/pending_sync_queue_service.dart';
 import 'package:hive/hive.dart';
 
@@ -26,6 +29,7 @@ class OfflineGroupUsersActionResult {
 class OfflineGroupUsersService {
   static const _boxName = 'group_member_cache';
   static const _requestTimeout = Duration(seconds: 5);
+  static const _moneySettlementTolerance = 0.0001;
 
   static Future<Box> _openBox() async {
     if (Hive.isBoxOpen(_boxName)) {
@@ -76,11 +80,16 @@ class OfflineGroupUsersService {
     int groupId, {
     Duration timeout = _requestTimeout,
   }) async {
-    final members = await GroupApiService()
+    final backendMembers = await GroupApiService()
         .fetchGroupMembers(groupId)
         .timeout(timeout);
-    await saveGroupMembers(userEmail, groupId, members);
-    return members;
+    final effectiveMembers = await _applyPendingOperationsOverlay(
+      userEmail,
+      groupId,
+      backendMembers,
+    );
+    await saveGroupMembers(userEmail, groupId, effectiveMembers);
+    return effectiveMembers;
   }
 
   static Future<bool> syncGroupMembersInBackground(
@@ -150,6 +159,102 @@ class OfflineGroupUsersService {
     );
   }
 
+  static Future<OfflineGroupUsersActionResult> settleMemberMoney(
+    String userEmail,
+    int groupId,
+    GroupMember member,
+    double amount, {
+    required double pricePerStrich,
+    required bool allowArbitraryMoneySettlements,
+    required bool affectsCurrentUser,
+  }) async {
+    if (amount <= 0) {
+      final members = await _currentMembers(userEmail, groupId);
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        errorMessage: 'Ungültiger Betrag',
+      );
+    }
+
+    final settlementStriche = calculateMoneySettlementStriche(
+      amount,
+      pricePerStrich,
+      allowArbitraryMoneySettlements: allowArbitraryMoneySettlements,
+    );
+    if (settlementStriche == null) {
+      final members = await _currentMembers(userEmail, groupId);
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        errorMessage:
+            'Betrag muss ein Vielfaches von ${_formatMoney(pricePerStrich)} € sein',
+      );
+    }
+
+    return _queueAndSyncSettlement(
+      userEmail,
+      groupId,
+      member,
+      operationType: PendingSyncOperation.settleGroupMemberMoney,
+      amount: amount,
+      localStrichDelta: -settlementStriche,
+      affectsCurrentUser: affectsCurrentUser,
+      fallbackErrorMessage: 'Geld konnte nicht abgezogen werden',
+    );
+  }
+
+  static Future<OfflineGroupUsersActionResult> settleMemberStriche(
+    String userEmail,
+    int groupId,
+    GroupMember member,
+    int amount, {
+    required bool affectsCurrentUser,
+  }) async {
+    if (amount <= 0) {
+      final members = await _currentMembers(userEmail, groupId);
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        errorMessage: 'Ungültige Anzahl',
+      );
+    }
+
+    return _queueAndSyncSettlement(
+      userEmail,
+      groupId,
+      member,
+      operationType: PendingSyncOperation.settleGroupMemberStriche,
+      amount: amount,
+      localStrichDelta: -amount,
+      affectsCurrentUser: affectsCurrentUser,
+      fallbackErrorMessage: 'Striche konnten nicht abgezogen werden',
+    );
+  }
+
+  static int? calculateMoneySettlementStriche(
+    double amount,
+    double pricePerStrich, {
+    required bool allowArbitraryMoneySettlements,
+  }) {
+    if (amount <= 0 || pricePerStrich <= 0) {
+      return null;
+    }
+
+    final rawCount = amount / pricePerStrich;
+    if (allowArbitraryMoneySettlements) {
+      return rawCount.floor();
+    }
+
+    final roundedCount = rawCount.round();
+    final diff = (rawCount - roundedCount).abs();
+    if (diff > _moneySettlementTolerance) {
+      return null;
+    }
+
+    return roundedCount;
+  }
+
   static Future<bool> syncPendingOperations(
     String userEmail, {
     int? groupId,
@@ -185,35 +290,77 @@ class OfflineGroupUsersService {
             operation.groupId,
             _targetUserId(operation),
           );
-          await _mergeUpdatedMember(
-            userEmail,
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          if (_hasPendingGroupUserOperationsInList(
+            operations,
             operation.groupId,
-            updatedMember,
-          );
+          )) {
+            await refreshGroupMembers(userEmail, operation.groupId);
+          } else {
+            await _mergeUpdatedMember(
+              userEmail,
+              operation.groupId,
+              updatedMember,
+            );
+          }
+          try {
+            await GroupRoleCacheService.refreshGroupRole(
+              userEmail,
+              operation.groupId,
+            );
+          } catch (_) {}
         } else if (operation.operationType ==
             PendingSyncOperation.demoteGroupMember) {
           final updatedMember = await GroupApiService().demoteGroupMember(
             operation.groupId,
             _targetUserId(operation),
           );
-          await _mergeUpdatedMember(
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          if (_hasPendingGroupUserOperationsInList(
+            operations,
+            operation.groupId,
+          )) {
+            await refreshGroupMembers(userEmail, operation.groupId);
+          } else {
+            await _mergeUpdatedMember(
+              userEmail,
+              operation.groupId,
+              updatedMember,
+            );
+          }
+          try {
+            await GroupRoleCacheService.refreshGroupRole(
+              userEmail,
+              operation.groupId,
+            );
+          } catch (_) {}
+        } else if (_isSettlementOperation(operation)) {
+          final settlement = await _syncSettlementOperation(operation);
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          final updatedMembers = await _membersAfterSuccessfulSettlement(
             userEmail,
             operation.groupId,
-            updatedMember,
+            _targetUserId(operation),
+            settlement,
           );
+          final resolvedCount = _resolvedCountForMembers(
+            updatedMembers,
+            _targetUserId(operation),
+            settlement,
+          );
+          if (_affectsCurrentUser(operation) && resolvedCount != null) {
+            await OfflineStrichService.saveLastOnlineCounter(
+              userEmail,
+              operation.groupId,
+              resolvedCount,
+            );
+          }
         } else {
           continue;
         }
-
-        try {
-          await GroupRoleCacheService.refreshGroupRole(
-            userEmail,
-            operation.groupId,
-          );
-        } catch (_) {}
-
-        operations.removeWhere((entry) => entry.id == operation.id);
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
       } on UnauthorizedException {
         rethrow;
       } on GroupApiException catch (e) {
@@ -237,6 +384,28 @@ class OfflineGroupUsersService {
           );
           await PendingSyncQueueService.saveOperations(userEmail, operations);
         }
+      } on GroupSettlementApiException catch (e) {
+        allSuccessful = false;
+        if (_isPermanentFailure(e.statusCode)) {
+          operations.removeWhere((entry) => entry.id == operation.id);
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          try {
+            await refreshGroupMembers(userEmail, operation.groupId);
+          } catch (_) {}
+        } else {
+          operations = _replaceOperation(
+            operations,
+            PendingSyncQueueService.scheduleRetry(operation),
+          );
+          await PendingSyncQueueService.saveOperations(userEmail, operations);
+        }
+      } on TimeoutException {
+        allSuccessful = false;
+        operations = _replaceOperation(
+          operations,
+          PendingSyncQueueService.scheduleRetry(operation),
+        );
+        await PendingSyncQueueService.saveOperations(userEmail, operations);
       } catch (_) {
         allSuccessful = false;
         operations = _replaceOperation(
@@ -301,8 +470,12 @@ class OfflineGroupUsersService {
               _targetUserId(operation),
             );
 
-      await _mergeUpdatedMember(userEmail, groupId, updatedMember);
       await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      if (await _hasPendingGroupUserOperations(userEmail, groupId)) {
+        await refreshGroupMembers(userEmail, groupId);
+      } else {
+        await _mergeUpdatedMember(userEmail, groupId, updatedMember);
+      }
       try {
         await GroupRoleCacheService.refreshGroupRole(userEmail, groupId);
       } catch (_) {}
@@ -332,7 +505,7 @@ class OfflineGroupUsersService {
           members: members,
           hasPendingSync: false,
           shouldReloadUi: _shouldReloadUi(e.statusCode),
-          errorMessage: _friendlyActionError(
+          errorMessage: _friendlyRoleActionError(
             e,
             operation,
             fallbackErrorMessage,
@@ -352,24 +525,278 @@ class OfflineGroupUsersService {
     }
   }
 
+  static Future<OfflineGroupUsersActionResult> _queueAndSyncSettlement(
+    String userEmail,
+    int groupId,
+    GroupMember member, {
+    required String operationType,
+    required num amount,
+    required int localStrichDelta,
+    required bool affectsCurrentUser,
+    required String fallbackErrorMessage,
+  }) async {
+    final previousMembers = await _currentMembers(userEmail, groupId);
+    final optimisticMembers = _applySettlementDeltaToMembers(
+      previousMembers,
+      member.userId,
+      localStrichDelta,
+      fallbackMember: member,
+      addIfMissing: true,
+    );
+    await saveGroupMembers(userEmail, groupId, optimisticMembers);
+
+    final operation = PendingSyncQueueService.createOperation(
+      userEmail: userEmail,
+      domain: PendingSyncOperation.domainGroupUsers,
+      operationType: operationType,
+      groupId: groupId,
+      payload: {
+        'targetUserId': member.userId,
+        'amount': amount,
+        'localStrichDelta': localStrichDelta,
+        'affectsCurrentUser': affectsCurrentUser,
+      },
+    );
+    await PendingSyncQueueService.addOperation(operation);
+
+    if (!await ConnectivityService.isOnline()) {
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    }
+
+    try {
+      final settlement = await _syncSettlementOperation(operation);
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      final syncedMembers = await _membersAfterSuccessfulSettlement(
+        userEmail,
+        groupId,
+        member.userId,
+        settlement,
+      );
+      final resolvedCount = _resolvedCountForMembers(
+        syncedMembers,
+        member.userId,
+        settlement,
+      );
+      if (affectsCurrentUser && resolvedCount != null) {
+        await OfflineStrichService.saveLastOnlineCounter(
+          userEmail,
+          groupId,
+          resolvedCount,
+        );
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: syncedMembers,
+        hasPendingSync: false,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } on GroupSettlementApiException catch (e) {
+      if (_isPermanentFailure(e.statusCode)) {
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          operation.id,
+        ]);
+        final restoredMembers = await _restoreMembersAfterPermanentFailure(
+          userEmail,
+          groupId,
+          previousMembers,
+        );
+        return OfflineGroupUsersActionResult(
+          members: restoredMembers,
+          hasPendingSync: false,
+          shouldReloadUi: _shouldReloadUi(e.statusCode),
+          errorMessage: _friendlySettlementError(
+            e,
+            operationType: operationType,
+            fallbackMessage: fallbackErrorMessage,
+          ),
+        );
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    } on TimeoutException {
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    } catch (_) {
+      return OfflineGroupUsersActionResult(
+        members: optimisticMembers,
+        hasPendingSync: true,
+      );
+    }
+  }
+
+  static Future<List<GroupMember>> _applySettlementResponse(
+    String userEmail,
+    int groupId,
+    int targetUserId,
+    GroupSettlementResult settlement,
+  ) async {
+    if (settlement.member != null) {
+      await _mergeUpdatedMember(userEmail, groupId, settlement.member!);
+      return (await getGroupMembers(userEmail, groupId)) ?? [];
+    }
+
+    final count = settlement.resolvedStrichCount;
+    if (count == null) {
+      throw const FormatException('Settlement ohne StrichCount');
+    }
+
+    final members = await _currentMembers(userEmail, groupId);
+    final updatedMembers = _setMemberStrichCount(
+      members,
+      targetUserId,
+      count,
+      addIfMissing: false,
+    );
+    await saveGroupMembers(userEmail, groupId, updatedMembers);
+    return updatedMembers;
+  }
+
+  static Future<List<GroupMember>> _membersAfterSuccessfulSettlement(
+    String userEmail,
+    int groupId,
+    int targetUserId,
+    GroupSettlementResult settlement,
+  ) async {
+    if (await _hasPendingGroupUserOperations(userEmail, groupId)) {
+      return refreshGroupMembers(userEmail, groupId);
+    }
+
+    return _applySettlementResponse(
+      userEmail,
+      groupId,
+      targetUserId,
+      settlement,
+    );
+  }
+
+  static Future<GroupSettlementResult> _syncSettlementOperation(
+    PendingSyncOperation operation,
+  ) {
+    if (operation.operationType ==
+        PendingSyncOperation.settleGroupMemberMoney) {
+      return GroupSettlementApiService().settleMoney(
+        operation.groupId,
+        _targetUserId(operation),
+        _moneyAmount(operation),
+      );
+    }
+
+    if (operation.operationType ==
+        PendingSyncOperation.settleGroupMemberStriche) {
+      return GroupSettlementApiService().settleStriche(
+        operation.groupId,
+        _targetUserId(operation),
+        _intAmount(operation),
+      );
+    }
+
+    throw UnsupportedError(
+      'Settlement-Operation ${operation.operationType} wird nicht unterstützt',
+    );
+  }
+
+  static Future<List<GroupMember>> _restoreMembersAfterPermanentFailure(
+    String userEmail,
+    int groupId,
+    List<GroupMember> fallbackMembers,
+  ) async {
+    try {
+      return await refreshGroupMembers(userEmail, groupId);
+    } catch (_) {
+      await saveGroupMembers(userEmail, groupId, fallbackMembers);
+      return fallbackMembers;
+    }
+  }
+
+  static Future<List<GroupMember>> _applyPendingOperationsOverlay(
+    String userEmail,
+    int groupId,
+    List<GroupMember> backendMembers,
+  ) async {
+    final operations = await PendingSyncQueueService.getOperations(userEmail);
+    var effectiveMembers = List<GroupMember>.from(backendMembers);
+
+    for (final operation in operations) {
+      if (operation.domain != PendingSyncOperation.domainGroupUsers ||
+          operation.groupId != groupId) {
+        continue;
+      }
+
+      if (operation.operationType == PendingSyncOperation.promoteGroupMember) {
+        effectiveMembers = _replaceMemberRoleInList(
+          effectiveMembers,
+          _targetUserId(operation),
+          GroupMemberRole.wart,
+        );
+        continue;
+      }
+
+      if (operation.operationType == PendingSyncOperation.demoteGroupMember) {
+        effectiveMembers = _replaceMemberRoleInList(
+          effectiveMembers,
+          _targetUserId(operation),
+          GroupMemberRole.member,
+        );
+        continue;
+      }
+
+      if (_isSettlementOperation(operation)) {
+        effectiveMembers = _applySettlementDeltaToMembers(
+          effectiveMembers,
+          _targetUserId(operation),
+          _localStrichDelta(operation),
+        );
+      }
+    }
+
+    return effectiveMembers;
+  }
+
+  static Future<List<GroupMember>> _currentMembers(
+    String userEmail,
+    int groupId,
+  ) async {
+    return (await getGroupMembers(userEmail, groupId)) ?? [];
+  }
+
+  static Future<bool> _hasPendingGroupUserOperations(
+    String userEmail,
+    int groupId,
+  ) async {
+    final operations = await PendingSyncQueueService.getOperations(userEmail);
+    return _hasPendingGroupUserOperationsInList(operations, groupId);
+  }
+
+  static bool _hasPendingGroupUserOperationsInList(
+    List<PendingSyncOperation> operations,
+    int groupId,
+  ) {
+    return operations.any((operation) {
+      return operation.domain == PendingSyncOperation.domainGroupUsers &&
+          operation.groupId == groupId;
+    });
+  }
+
   static Future<void> _replaceMemberRole(
     String userEmail,
     int groupId,
     GroupMember updatedMember,
   ) async {
-    final members = (await getGroupMembers(userEmail, groupId)) ?? [];
-    var memberFound = false;
-    final updatedMembers = members.map((member) {
-      if (member.userId != updatedMember.userId) {
-        return member;
-      }
-
-      memberFound = true;
-      return updatedMember;
-    }).toList();
-    if (!memberFound) {
-      updatedMembers.add(updatedMember);
-    }
+    final members = await _currentMembers(userEmail, groupId);
+    final updatedMembers = _replaceMemberInList(
+      members,
+      updatedMember,
+      addIfMissing: true,
+    );
     await saveGroupMembers(userEmail, groupId, updatedMembers);
   }
 
@@ -378,7 +805,22 @@ class OfflineGroupUsersService {
     int groupId,
     GroupMember updatedMember,
   ) async {
-    final members = (await getGroupMembers(userEmail, groupId)) ?? [];
+    final members = await _currentMembers(userEmail, groupId);
+    final updatedMembers = _replaceMemberInList(
+      members,
+      updatedMember.copyWith(
+        strichCount: _normalizeStrichCount(updatedMember.strichCount),
+      ),
+      addIfMissing: true,
+    );
+    await saveGroupMembers(userEmail, groupId, updatedMembers);
+  }
+
+  static List<GroupMember> _replaceMemberInList(
+    List<GroupMember> members,
+    GroupMember updatedMember, {
+    required bool addIfMissing,
+  }) {
     var memberFound = false;
     final updatedMembers = members.map((member) {
       if (member.userId != updatedMember.userId) {
@@ -389,11 +831,83 @@ class OfflineGroupUsersService {
       return updatedMember;
     }).toList();
 
-    if (!memberFound) {
+    if (!memberFound && addIfMissing) {
       updatedMembers.add(updatedMember);
     }
 
-    await saveGroupMembers(userEmail, groupId, updatedMembers);
+    return updatedMembers;
+  }
+
+  static List<GroupMember> _replaceMemberRoleInList(
+    List<GroupMember> members,
+    int targetUserId,
+    GroupMemberRole role,
+  ) {
+    return members.map((member) {
+      if (member.userId != targetUserId) {
+        return member;
+      }
+
+      return member.copyWith(role: role);
+    }).toList();
+  }
+
+  static List<GroupMember> _applySettlementDeltaToMembers(
+    List<GroupMember> members,
+    int targetUserId,
+    int localStrichDelta, {
+    GroupMember? fallbackMember,
+    bool addIfMissing = false,
+  }) {
+    var memberFound = false;
+    final updatedMembers = members.map((member) {
+      if (member.userId != targetUserId) {
+        return member;
+      }
+
+      memberFound = true;
+      return member.copyWith(
+        strichCount: _normalizeStrichCount(
+          member.strichCount + localStrichDelta,
+        ),
+      );
+    }).toList();
+
+    if (!memberFound && addIfMissing && fallbackMember != null) {
+      updatedMembers.add(
+        fallbackMember.copyWith(
+          strichCount: _normalizeStrichCount(
+            fallbackMember.strichCount + localStrichDelta,
+          ),
+        ),
+      );
+    }
+
+    return updatedMembers;
+  }
+
+  static List<GroupMember> _setMemberStrichCount(
+    List<GroupMember> members,
+    int targetUserId,
+    int strichCount, {
+    required bool addIfMissing,
+  }) {
+    var memberFound = false;
+    final normalizedCount = _normalizeStrichCount(strichCount);
+    final updatedMembers = members.map((member) {
+      if (member.userId != targetUserId) {
+        return member;
+      }
+
+      memberFound = true;
+      return member.copyWith(strichCount: normalizedCount);
+    }).toList();
+
+    if (!memberFound && addIfMissing) {
+      return updatedMembers;
+    }
+
+    return updatedMembers;
   }
 
   static List<PendingSyncOperation> _replaceOperation(
@@ -422,11 +936,75 @@ class OfflineGroupUsersService {
     return int.parse(rawValue.toString());
   }
 
+  static int _localStrichDelta(PendingSyncOperation operation) {
+    final rawValue = operation.payload['localStrichDelta'];
+    if (rawValue is int) {
+      return rawValue;
+    }
+
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+
+    return int.tryParse(rawValue.toString()) ?? 0;
+  }
+
+  static double _moneyAmount(PendingSyncOperation operation) {
+    final rawValue = operation.payload['amount'];
+    if (rawValue is double) {
+      return rawValue;
+    }
+
+    if (rawValue is num) {
+      return rawValue.toDouble();
+    }
+
+    return double.parse(rawValue.toString());
+  }
+
+  static int _intAmount(PendingSyncOperation operation) {
+    final rawValue = operation.payload['amount'];
+    if (rawValue is int) {
+      return rawValue;
+    }
+
+    if (rawValue is num) {
+      return rawValue.toInt();
+    }
+
+    return int.parse(rawValue.toString());
+  }
+
+  static bool _affectsCurrentUser(PendingSyncOperation operation) {
+    return operation.payload['affectsCurrentUser'] == true;
+  }
+
+  static int? _resolvedCountForMembers(
+    List<GroupMember> members,
+    int targetUserId,
+    GroupSettlementResult settlement,
+  ) {
+    for (final member in members) {
+      if (member.userId == targetUserId) {
+        return member.strichCount;
+      }
+    }
+
+    return settlement.resolvedStrichCount;
+  }
+
+  static bool _isSettlementOperation(PendingSyncOperation operation) {
+    return operation.operationType ==
+            PendingSyncOperation.settleGroupMemberMoney ||
+        operation.operationType ==
+            PendingSyncOperation.settleGroupMemberStriche;
+  }
+
   static bool _isPermanentFailure(int? statusCode) {
     return statusCode != null && statusCode >= 400 && statusCode < 500;
   }
 
-  static String _friendlyActionError(
+  static String _friendlyRoleActionError(
     GroupApiException exception,
     PendingSyncOperation operation,
     String fallbackMessage,
@@ -455,6 +1033,26 @@ class OfflineGroupUsersService {
           return message;
         }
         return fallbackMessage;
+    }
+  }
+
+  static String _friendlySettlementError(
+    GroupSettlementApiException exception, {
+    required String operationType,
+    required String fallbackMessage,
+  }) {
+    switch (exception.statusCode) {
+      case 400:
+        return operationType == PendingSyncOperation.settleGroupMemberMoney
+            ? 'Ungültiger Betrag'
+            : 'Ungültige Anzahl';
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Mitglied oder Gruppe nicht gefunden';
+      default:
+        final message = exception.message.trim();
+        return message.isNotEmpty ? message : fallbackMessage;
     }
   }
 
@@ -494,6 +1092,14 @@ class OfflineGroupUsersService {
 
   static bool _shouldReloadUi(int? statusCode) {
     return statusCode == 403 || statusCode == 404;
+  }
+
+  static int _normalizeStrichCount(int value) {
+    return value < 0 ? 0 : value;
+  }
+
+  static String _formatMoney(double value) {
+    return value.toStringAsFixed(2).replaceAll('.', ',');
   }
 
   static String _groupMembersKey(String userEmail, int groupId) {

@@ -2,11 +2,13 @@ class GroupSettings {
   final String name;
   final double pricePerStrich;
   final bool onlyWartsCanBookForOthers;
+  final bool allowArbitraryMoneySettlements;
 
   const GroupSettings({
     required this.name,
     required this.pricePerStrich,
     required this.onlyWartsCanBookForOthers,
+    required this.allowArbitraryMoneySettlements,
   });
 
   factory GroupSettings.fromJson(Map<String, dynamic> json) {
@@ -14,6 +16,8 @@ class GroupSettings {
       name: (json['name'] ?? '').toString(),
       pricePerStrich: _toDouble(json['pricePerStrich']),
       onlyWartsCanBookForOthers: json['onlyWartsCanBookForOthers'] == true,
+      allowArbitraryMoneySettlements:
+          json['allowArbitraryMoneySettlements'] == true,
     );
   }
 
@@ -22,6 +26,7 @@ class GroupSettings {
       'name': name,
       'pricePerStrich': pricePerStrich,
       'onlyWartsCanBookForOthers': onlyWartsCanBookForOthers,
+      'allowArbitraryMoneySettlements': allowArbitraryMoneySettlements,
     };
   }
 

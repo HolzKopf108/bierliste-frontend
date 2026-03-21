@@ -7,8 +7,8 @@ class MoneyInputFormatter extends TextInputFormatter {
     TextEditingValue oldValue,
     TextEditingValue newValue,
   ) {
-    final oldText = oldValue.text;
-    final newText = newValue.text;
+    final oldText = _normalizeDecimalSeparators(oldValue.text);
+    final newText = _normalizeDecimalSeparators(newValue.text);
     final oldCursor = oldValue.selection.baseOffset;
     final newCursor = newValue.selection.baseOffset;
     final isDeleting = newText.length < oldText.length;
@@ -27,7 +27,11 @@ class MoneyInputFormatter extends TextInputFormatter {
     // === 0) Ungültige Eingabe hinter dem Komma komplett ignorieren ===
     // Wenn im rohen Text etwas hinzugekommen ist, im gereinigten aber nichts
     // UND der Cursor hinter dem Komma stand, verwerfen wir komplett.
-    if (!isDeleting && rawDelta > 0 && cleanDelta == 0 && oldComma >= 0 && oldCursor > oldComma) {
+    if (!isDeleting &&
+        rawDelta > 0 &&
+        cleanDelta == 0 &&
+        oldComma >= 0 &&
+        oldCursor > oldComma) {
       return oldValue;
     }
 
@@ -35,14 +39,9 @@ class MoneyInputFormatter extends TextInputFormatter {
     final oldBefore = (oldComma >= 0)
         ? cleanOld.substring(0, oldComma)
         : cleanOld;
-    final rawOldAfter = (oldComma >= 0)
-        ? cleanOld.substring(oldComma + 1)
-        : '';
+    final rawOldAfter = (oldComma >= 0) ? cleanOld.substring(oldComma + 1) : '';
     // Genau 2 Dezimalstellen vorhalten
-    final oldAfter = rawOldAfter
-        .padRight(2, '0')
-        .substring(0, 2)
-        .split('');
+    final oldAfter = rawOldAfter.padRight(2, '0').substring(0, 2).split('');
 
     // Hilfsfunktion zum Zusammenbauen von Text und Cursor
     TextEditingValue finish(String before, String after, int cursorPos) {
@@ -80,8 +79,8 @@ class MoneyInputFormatter extends TextInputFormatter {
 
       // 1c) Im Integer-Bereich löschen
       if (target >= 0 && target < oldBefore.length) {
-        final newBefore = oldBefore.substring(0, target) +
-            oldBefore.substring(target + 1);
+        final newBefore =
+            oldBefore.substring(0, target) + oldBefore.substring(target + 1);
         if (oldComma >= 0) {
           return finish(newBefore, oldAfter.join(), target);
         } else {
@@ -155,5 +154,13 @@ class MoneyInputFormatter extends TextInputFormatter {
         ? newCursor
         : math.min(newCursor, before.length + 1 + after.length);
     return finish(before, after, outCursor);
+  }
+
+  String _normalizeDecimalSeparators(String value) {
+    return value
+        .replaceAll('.', ',')
+        .replaceAll('٫', ',')
+        .replaceAll('‚', ',')
+        .replaceAll('，', ',');
   }
 }

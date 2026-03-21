@@ -56,6 +56,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   bool _isSaving = false;
   bool _isLeaving = false;
   bool _onlyWartsCanBookForOthers = false;
+  bool _allowArbitraryMoneySettlements = false;
   String? _loadErrorMessage;
 
   @override
@@ -202,6 +203,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       name: _groupNameController.text.trim(),
       pricePerStrich: pricePerStrich,
       onlyWartsCanBookForOthers: _onlyWartsCanBookForOthers,
+      allowArbitraryMoneySettlements: _allowArbitraryMoneySettlements,
     );
 
     try {
@@ -279,6 +281,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         .toStringAsFixed(2)
         .replaceAll('.', ',');
     _onlyWartsCanBookForOthers = settings.onlyWartsCanBookForOthers;
+    _allowArbitraryMoneySettlements = settings.allowArbitraryMoneySettlements;
   }
 
   double? _parsePricePerStrich(String value) {
@@ -363,6 +366,30 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
 
   bool _isSaveDisabled(bool canEditSettings, bool isRoleLoading) {
     return !canEditSettings || isRoleLoading || _isSaving || _isLeaving;
+  }
+
+  String get _moneySettlementHelpMessage =>
+      'Wenn aktiviert, dürfen Bierlistenwarte beliebige Geldbeträge abziehen. '
+      'Es wird immer auf volle Striche abgerundet und der Restbetrag ignoriert. '
+      'Beispiel: 2,50 EUR bei 1,00 EUR pro Strich zieht 2 Striche ab. '
+      'Wenn deaktiviert, sind nur Vielfache des Preises pro Strich erlaubt.';
+
+  Widget _buildMoneySettlementTitle() {
+    return Row(
+      children: [
+        const Expanded(
+          child: Text('Beliebige Geldbeträge für Abzüge erlauben'),
+        ),
+        Tooltip(
+          message: _moneySettlementHelpMessage,
+          child: Icon(
+            Icons.info_outline,
+            size: 20,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildPermissionHint(bool isRoleLoading, bool canEditSettings) {
@@ -538,6 +565,19 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                   ? null
                   : (value) {
                       setState(() => _onlyWartsCanBookForOthers = value);
+                    },
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: _buildMoneySettlementTitle(),
+              subtitle: const Text(
+                'Wenn aktiviert, wird auf ganze Striche abgerundet und der Restbetrag ignoriert.',
+              ),
+              value: _allowArbitraryMoneySettlements,
+              onChanged: _isReadOnly(canEditSettings)
+                  ? null
+                  : (value) {
+                      setState(() => _allowArbitraryMoneySettlements = value);
                     },
             ),
             const SizedBox(height: 20),

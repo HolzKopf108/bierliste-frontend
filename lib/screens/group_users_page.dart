@@ -1,20 +1,26 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+
 import '../models/group_member.dart';
+import '../models/group_settings.dart';
 import '../providers/auth_provider.dart';
 import '../providers/group_role_provider.dart';
 import '../providers/sync_provider.dart';
+import '../providers/user_provider.dart';
 import '../services/connectivity_service.dart';
 import '../services/group_api_service.dart';
-import '../services/offline_group_users_service.dart';
 import '../services/http_service.dart';
+import '../services/offline_group_settings_service.dart';
+import '../services/offline_group_users_service.dart';
+import '../utils/money_input_formatter.dart';
 import '../widgets/toast.dart';
 
 enum SortOption { alphabet, strichCount }
 
-enum _MemberAction { promoteToWart, demoteToMember }
+enum _MemberAction { settleMoney, settleStriche, promoteToWart, demoteToMember }
 
 class GroupUsersPage extends StatefulWidget {
   final int groupId;
@@ -32,6 +38,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   bool _isLoading = true;
   int? _updatingMemberUserId;
   String? _loadErrorMessage;
+  SyncProvider? _syncProvider;
+  bool _wasOnline = false;
+  bool _wasSyncing = false;
 
   @override
   void initState() {
@@ -39,14 +48,39 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     _loadMembers();
   }
 
-  Future<void> _loadMembers() async {
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final syncProvider = context.read<SyncProvider>();
+    if (_syncProvider == syncProvider) {
+      return;
+    }
+
+    _syncProvider?.removeListener(_handleSyncProviderChanged);
+    _syncProvider = syncProvider;
+    _wasOnline = syncProvider.isAppOnline;
+    _wasSyncing = syncProvider.isSyncing;
+    syncProvider.addListener(_handleSyncProviderChanged);
+  }
+
+  @override
+  void dispose() {
+    _syncProvider?.removeListener(_handleSyncProviderChanged);
+    super.dispose();
+  }
+
+  Future<void> _loadMembers({bool showLoading = true}) async {
     final userEmail = context.read<AuthProvider>().userEmail;
     final groupRoleProvider = context.read<GroupRoleProvider>();
 
-    setState(() {
-      _isLoading = true;
+    if (showLoading) {
+      setState(() {
+        _isLoading = true;
+        _loadErrorMessage = null;
+      });
+    } else {
       _loadErrorMessage = null;
-    });
+    }
 
     if (userEmail == null) {
       if (!mounted) return;
@@ -169,6 +203,28 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     });
   }
 
+  void _handleSyncProviderChanged() {
+    final syncProvider = _syncProvider;
+    if (syncProvider == null) {
+      return;
+    }
+
+    final isOnline = syncProvider.isAppOnline;
+    final isSyncing = syncProvider.isSyncing;
+    final shouldReload =
+        (!_wasOnline && isOnline) || (_wasSyncing && !isSyncing);
+
+    _wasOnline = isOnline;
+    _wasSyncing = isSyncing;
+
+    if (shouldReload &&
+        mounted &&
+        !_isLoading &&
+        _updatingMemberUserId == null) {
+      unawaited(_loadMembers(showLoading: false));
+    }
+  }
+
   List<GroupMember> _sortedMembers() {
     final sorted = List<GroupMember>.from(_members);
 
@@ -195,7 +251,25 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return strichCount == 1 ? 'Strich' : 'Striche';
   }
 
-  Future<void> _handleMemberAction(
+  Future<void> _handlePopupAction(
+    GroupMember member,
+    _MemberAction action,
+  ) async {
+    switch (action) {
+      case _MemberAction.promoteToWart:
+      case _MemberAction.demoteToMember:
+        await _handleRoleAction(member, action);
+        return;
+      case _MemberAction.settleMoney:
+        await _handleMoneySettlementAction(member);
+        return;
+      case _MemberAction.settleStriche:
+        await _handleStricheSettlementAction(member);
+        return;
+    }
+  }
+
+  Future<void> _handleRoleAction(
     GroupMember member,
     _MemberAction action,
   ) async {
@@ -229,6 +303,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
             widget.groupId,
             member,
           ),
+        _ => throw UnsupportedError('Ungültige Rollenaktion'),
       };
       if (!mounted) return;
 
@@ -245,8 +320,10 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       } else {
         Toast.show(
           context,
-          'Rollenänderung gespeichert',
-          type: ToastType.success,
+          result.hasPendingSync
+              ? 'Rollenänderung gespeichert und wird synchronisiert'
+              : 'Rollenänderung gespeichert',
+          type: result.hasPendingSync ? ToastType.info : ToastType.success,
         );
       }
 
@@ -269,6 +346,379 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
   }
 
+  Future<void> _handleMoneySettlementAction(GroupMember member) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final userEmail = context.read<AuthProvider>().userEmail;
+    if (userEmail == null) {
+      Toast.show(context, 'Berechtigung konnte nicht geprüft werden');
+      return;
+    }
+
+    final groupSettings = await _resolveSettlementSettings(userEmail);
+    if (!mounted) {
+      return;
+    }
+    if (groupSettings == null || groupSettings.pricePerStrich <= 0) {
+      Toast.show(
+        context,
+        'Preis pro Strich konnte nicht geladen werden',
+        type: ToastType.warning,
+      );
+      return;
+    }
+
+    final amount = await _showMoneySettlementDialog(member, groupSettings);
+    if (!mounted || amount == null) {
+      return;
+    }
+
+    final resultingReduction =
+        OfflineGroupUsersService.calculateMoneySettlementStriche(
+          amount,
+          groupSettings.pricePerStrich,
+          allowArbitraryMoneySettlements:
+              groupSettings.allowArbitraryMoneySettlements,
+        ) ??
+        0;
+    final ignoredAmount = groupSettings.allowArbitraryMoneySettlements
+        ? (amount - (resultingReduction * groupSettings.pricePerStrich))
+              .clamp(0.0, amount)
+              .toDouble()
+        : 0.0;
+    final ignoredAmountText = ignoredAmount > 0.0001
+        ? '\nRestbetrag ${_formatMoney(ignoredAmount)} € wird ignoriert.'
+        : '';
+    final successMessage = resultingReduction > 0
+        ? 'Geldabzug gespeichert'
+        : 'Kein voller Strich, daher keine Änderung';
+    final pendingMessage = resultingReduction > 0
+        ? 'Geldabzug gespeichert und wird synchronisiert'
+        : 'Kein voller Strich, daher keine Änderung; Anfrage wird synchronisiert';
+
+    final confirmed = await _showConfirmationDialog(
+      title: 'Geld abziehen',
+      message:
+          'Wirklich ${_formatMoney(amount)} € bei ${member.username} abziehen?\n'
+          'Dabei werden $resultingReduction ${_strichLabel(resultingReduction)} reduziert.'
+          '$ignoredAmountText',
+    );
+    if (!mounted || !confirmed) {
+      return;
+    }
+
+    await _handleSettlementAction(
+      member,
+      execute: (userEmail) => OfflineGroupUsersService.settleMemberMoney(
+        userEmail,
+        widget.groupId,
+        member,
+        amount,
+        pricePerStrich: groupSettings.pricePerStrich,
+        allowArbitraryMoneySettlements:
+            groupSettings.allowArbitraryMoneySettlements,
+        affectsCurrentUser: _isOwnMember(member),
+      ),
+      successMessage: successMessage,
+      pendingMessage: pendingMessage,
+      fallbackErrorMessage: 'Geld konnte nicht abgezogen werden',
+    );
+  }
+
+  Future<void> _handleStricheSettlementAction(GroupMember member) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final amount = await _showStricheSettlementDialog(member);
+    if (!mounted || amount == null) {
+      return;
+    }
+
+    final confirmed = await _showConfirmationDialog(
+      title: 'Striche abziehen',
+      message:
+          'Wirklich $amount ${_strichLabel(amount)} bei ${member.username} abziehen?',
+    );
+    if (!mounted || !confirmed) {
+      return;
+    }
+
+    await _handleSettlementAction(
+      member,
+      execute: (userEmail) => OfflineGroupUsersService.settleMemberStriche(
+        userEmail,
+        widget.groupId,
+        member,
+        amount,
+        affectsCurrentUser: _isOwnMember(member),
+      ),
+      successMessage: 'Strichstand gespeichert',
+      pendingMessage: 'Strichstand gespeichert und wird synchronisiert',
+      fallbackErrorMessage: 'Striche konnten nicht abgezogen werden',
+    );
+  }
+
+  Future<void> _handleSettlementAction(
+    GroupMember member, {
+    required Future<OfflineGroupUsersActionResult> Function(String userEmail)
+    execute,
+    required String successMessage,
+    required String pendingMessage,
+    required String fallbackErrorMessage,
+  }) async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
+    final syncProvider = context.read<SyncProvider>();
+
+    if (userEmail == null) {
+      Toast.show(context, 'Berechtigung konnte nicht geprüft werden');
+      return;
+    }
+
+    setState(() {
+      _updatingMemberUserId = member.userId;
+    });
+
+    try {
+      final result = await execute(userEmail);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _members = result.members;
+        _loadErrorMessage = null;
+      });
+
+      if (result.errorMessage != null) {
+        Toast.show(context, result.errorMessage!, type: ToastType.warning);
+        if (result.shouldReloadUi) {
+          unawaited(_reloadAfterActionFailure(userEmail, groupRoleProvider));
+        }
+      } else {
+        Toast.show(
+          context,
+          result.hasPendingSync ? pendingMessage : successMessage,
+          type: result.hasPendingSync ? ToastType.info : ToastType.success,
+        );
+      }
+
+      if (result.hasPendingSync) {
+        unawaited(syncProvider.markPendingSync());
+      }
+    } on UnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
+      unawaited(_reloadAfterActionFailure(userEmail, groupRoleProvider));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(context, fallbackErrorMessage, type: ToastType.warning);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingMemberUserId = null;
+        });
+      }
+    }
+  }
+
+  Future<GroupSettings?> _resolveSettlementSettings(String userEmail) async {
+    final cachedSettings = await OfflineGroupSettingsService.getGroupSettings(
+      userEmail,
+      widget.groupId,
+    );
+    if (!await ConnectivityService.isOnline()) {
+      return cachedSettings;
+    }
+
+    try {
+      return await OfflineGroupSettingsService.refreshGroupSettings(
+        userEmail,
+        widget.groupId,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } catch (_) {
+      return cachedSettings;
+    }
+  }
+
+  Future<double?> _showMoneySettlementDialog(
+    GroupMember member,
+    GroupSettings groupSettings,
+  ) async {
+    final controller = TextEditingController();
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) {
+        String? errorText;
+
+        void submit(StateSetter setDialogState) {
+          final parsed = _parseMoneyAmount(controller.text);
+          if (parsed == null || parsed <= 0) {
+            setDialogState(() {
+              errorText = 'Bitte einen gültigen Betrag eingeben';
+            });
+            return;
+          }
+
+          final settlementStriche =
+              OfflineGroupUsersService.calculateMoneySettlementStriche(
+                parsed,
+                groupSettings.pricePerStrich,
+                allowArbitraryMoneySettlements:
+                    groupSettings.allowArbitraryMoneySettlements,
+              );
+          if (!groupSettings.allowArbitraryMoneySettlements &&
+              settlementStriche == null) {
+            setDialogState(() {
+              errorText =
+                  'Betrag muss ein Vielfaches von ${_formatMoney(groupSettings.pricePerStrich)} € sein';
+            });
+            return;
+          }
+
+          Navigator.of(dialogContext).pop(parsed);
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Geld bei ${member.username} abziehen'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Preis pro Strich: ${_formatMoney(groupSettings.pricePerStrich)} €',
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    groupSettings.allowArbitraryMoneySettlements
+                        ? 'Beliebige Beträge sind erlaubt. Es wird immer auf volle Striche abgerundet; der Restbetrag wird ignoriert.'
+                        : 'Es sind nur Vielfache des Preises pro Strich erlaubt.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    inputFormatters: [MoneyInputFormatter()],
+                    decoration: InputDecoration(
+                      labelText: 'Betrag',
+                      border: const OutlineInputBorder(),
+                      errorText: errorText,
+                    ),
+                    onSubmitted: (_) => submit(setDialogState),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: () => submit(setDialogState),
+                  child: const Text('Weiter'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    return amount;
+  }
+
+  Future<int?> _showStricheSettlementDialog(GroupMember member) async {
+    final controller = TextEditingController();
+    final amount = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        String? errorText;
+
+        void submit(StateSetter setDialogState) {
+          final parsed = int.tryParse(controller.text.trim());
+          if (parsed == null || parsed <= 0) {
+            setDialogState(() {
+              errorText = 'Bitte eine gültige Anzahl eingeben';
+            });
+            return;
+          }
+
+          Navigator.of(dialogContext).pop(parsed);
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Striche bei ${member.username} abziehen'),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: InputDecoration(
+                  labelText: 'Anzahl',
+                  border: const OutlineInputBorder(),
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) => submit(setDialogState),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: () => submit(setDialogState),
+                  child: const Text('Weiter'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    return amount;
+  }
+
+  Future<bool> _showConfirmationDialog({
+    required String title,
+    required String message,
+  }) async {
+    return (await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: Text(title),
+              content: Text(message),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Bestätigen'),
+                ),
+              ],
+            );
+          },
+        )) ??
+        false;
+  }
+
   Future<void> _reloadAfterActionFailure(
     String userEmail,
     GroupRoleProvider groupRoleProvider,
@@ -279,7 +729,40 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
     if (!mounted) return;
 
-    await _loadMembers();
+    await _loadMembers(showLoading: false);
+  }
+
+  bool _isOwnMember(GroupMember member) {
+    final currentUsername = context.read<UserProvider>().user?.username.trim();
+    if (currentUsername == null || currentUsername.isEmpty) {
+      return false;
+    }
+
+    return currentUsername.toLowerCase() ==
+        member.username.trim().toLowerCase();
+  }
+
+  double? _parseMoneyAmount(String rawValue) {
+    final trimmed = rawValue.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    final normalized = trimmed.replaceAll('.', ',');
+    if (!RegExp(r'^\d{1,8}(,\d{0,2})?$').hasMatch(normalized)) {
+      return null;
+    }
+
+    final value = double.tryParse(normalized.replaceAll(',', '.'));
+    if (value == null || value <= 0) {
+      return null;
+    }
+
+    return value;
+  }
+
+  String _formatMoney(double value) {
+    return value.toStringAsFixed(2).replaceAll('.', ',');
   }
 
   bool _isGroupUnavailableError(int? statusCode) {
@@ -335,7 +818,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                     Text(_loadErrorMessage!, textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
-                      onPressed: _loadMembers,
+                      onPressed: () => _loadMembers(),
                       icon: const Icon(Icons.refresh),
                       label: const Text('Erneut laden'),
                     ),
@@ -351,14 +834,14 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   const Text('Keine Mitglieder vorhanden'),
                   const SizedBox(height: 12),
                   TextButton(
-                    onPressed: _loadMembers,
+                    onPressed: () => _loadMembers(),
                     child: const Text('Erneut laden'),
                   ),
                 ],
               ),
             )
           : RefreshIndicator(
-              onRefresh: _loadMembers,
+              onRefresh: () => _loadMembers(showLoading: false),
               child: ListView.builder(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 12,
@@ -486,15 +969,29 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                 : PopupMenuButton<_MemberAction>(
                                     tooltip: 'Mitglied verwalten',
                                     onSelected: (action) =>
-                                        _handleMemberAction(member, action),
+                                        _handlePopupAction(member, action),
                                     itemBuilder: (context) {
                                       final items =
-                                          <PopupMenuEntry<_MemberAction>>[];
+                                          <PopupMenuEntry<_MemberAction>>[
+                                            const PopupMenuItem<_MemberAction>(
+                                              value: _MemberAction.settleMoney,
+                                              child: Text('Geld abziehen'),
+                                            ),
+                                            const PopupMenuItem<_MemberAction>(
+                                              value:
+                                                  _MemberAction.settleStriche,
+                                              child: Text('Striche abziehen'),
+                                            ),
+                                            const PopupMenuDivider(),
+                                          ];
+
                                       if (member.role == GroupMemberRole.wart) {
                                         items.add(
                                           const PopupMenuItem<_MemberAction>(
                                             value: _MemberAction.demoteToMember,
-                                            child: Text('Bierlistenwart entfernen'),
+                                            child: Text(
+                                              'Bierlistenwart entfernen',
+                                            ),
                                           ),
                                         );
                                       } else {

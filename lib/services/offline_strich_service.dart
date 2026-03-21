@@ -188,16 +188,31 @@ class OfflineStrichService {
     int groupId, {
     int? targetUserId,
   }) async {
-    final list = await getPendingCounterOperations(userEmail);
-    return list
-        .where(
-          (operation) =>
-              operation.groupId == groupId &&
-              targetUserId == null &&
-              operation.operationType ==
-                  PendingSyncOperation.incrementOwnCounter,
-        )
-        .fold<int>(0, (sum, operation) => sum + _amount(operation));
+    final operations = await PendingSyncQueueService.getOperations(userEmail);
+    return operations
+        .where((operation) {
+          if (operation.groupId != groupId) {
+            return false;
+          }
+
+          if (operation.domain == PendingSyncOperation.domainCounter) {
+            return targetUserId == null &&
+                operation.operationType ==
+                    PendingSyncOperation.incrementOwnCounter;
+          }
+
+          if (operation.domain != PendingSyncOperation.domainGroupUsers ||
+              !_isSettlementOperation(operation)) {
+            return false;
+          }
+
+          if (targetUserId != null) {
+            return _targetUserId(operation) == targetUserId;
+          }
+
+          return operation.payload['affectsCurrentUser'] == true;
+        })
+        .fold<int>(0, (sum, operation) => sum + _pendingCountDelta(operation));
   }
 
   static Future<bool> hasPendingCounterOperations(String userEmail) async {
@@ -215,6 +230,48 @@ class OfflineStrichService {
 
   static int _amount(PendingSyncOperation operation) {
     final value = operation.payload['amount'];
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  static int _pendingCountDelta(PendingSyncOperation operation) {
+    if (operation.domain == PendingSyncOperation.domainCounter &&
+        operation.operationType == PendingSyncOperation.incrementOwnCounter) {
+      return _amount(operation);
+    }
+
+    return _localStrichDelta(operation);
+  }
+
+  static bool _isSettlementOperation(PendingSyncOperation operation) {
+    return operation.operationType ==
+            PendingSyncOperation.settleGroupMemberMoney ||
+        operation.operationType ==
+            PendingSyncOperation.settleGroupMemberStriche;
+  }
+
+  static int _localStrichDelta(PendingSyncOperation operation) {
+    final value = operation.payload['localStrichDelta'];
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  static int _targetUserId(PendingSyncOperation operation) {
+    final value = operation.payload['targetUserId'];
     if (value is int) {
       return value;
     }

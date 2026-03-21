@@ -11,8 +11,8 @@ class PendingSyncService {
   static Future<bool> syncPendingOperations(String userEmail) async {
     final results = await Future.wait<bool>([
       OfflineStrichService.syncPendingOperations(userEmail),
-      OfflineGroupUsersService.syncPendingOperations(userEmail),
       OfflineGroupSettingsService.syncPendingOperations(userEmail),
+      OfflineGroupUsersService.syncPendingOperations(userEmail),
     ]);
 
     return results.every((result) => result);

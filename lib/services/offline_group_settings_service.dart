@@ -71,8 +71,13 @@ class OfflineGroupSettingsService {
     final groupSettings = await GroupSettingsApiService().fetchGroupSettings(
       groupId,
     );
-    await saveGroupSettings(userEmail, groupId, groupSettings);
-    return groupSettings;
+    final effectiveSettings = await _applyPendingOverlay(
+      userEmail,
+      groupId,
+      groupSettings,
+    );
+    await saveGroupSettings(userEmail, groupId, effectiveSettings);
+    return effectiveSettings;
   }
 
   static Future<OfflineGroupSettingsActionResult> updateGroupSettings(
@@ -277,6 +282,29 @@ class OfflineGroupSettingsService {
 
   static GroupSettings _settingsFromOperation(PendingSyncOperation operation) {
     return GroupSettings.fromJson(operation.payload);
+  }
+
+  static Future<GroupSettings> _applyPendingOverlay(
+    String userEmail,
+    int groupId,
+    GroupSettings backendSettings,
+  ) async {
+    final operations = await PendingSyncQueueService.getOperations(userEmail);
+    final pendingUpdate = operations
+        .where((operation) {
+          return operation.domain == PendingSyncOperation.domainGroupSettings &&
+              operation.operationType ==
+                  PendingSyncOperation.updateGroupSettings &&
+              operation.groupId == groupId;
+        })
+        .cast<PendingSyncOperation?>()
+        .firstWhere((_) => true, orElse: () => null);
+
+    if (pendingUpdate == null) {
+      return backendSettings;
+    }
+
+    return _settingsFromOperation(pendingUpdate);
   }
 
   static List<PendingSyncOperation> _replaceOperation(

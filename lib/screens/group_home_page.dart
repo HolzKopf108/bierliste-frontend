@@ -34,7 +34,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
   static const _minimumSubmitDuration = Duration(milliseconds: 250);
   static const _primaryActionTransitionDuration = Duration(milliseconds: 220);
   int _strichCount = 0;
-  final double _pricePerStrich = 1.5;
+  double _pricePerStrich = 0;
   bool _isLoading = true;
   bool _isSubmitting = false;
   String? _loadErrorMessage;
@@ -47,9 +47,15 @@ class _GroupHomePageState extends State<GroupHomePage> {
   void initState() {
     super.initState();
     _groupName = widget.groupName?.trim();
-    _loadCounter();
-    _loadGroupRole();
-    _loadGroupName();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      unawaited(_loadCounter());
+      unawaited(_loadGroupRole());
+      unawaited(_loadGroupSettings());
+    });
   }
 
   @override
@@ -100,7 +106,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
 
     if (shouldReload && mounted && !_isLoading && !_isSubmitting) {
       _loadCounter(showLoading: false, triggerSync: false);
-      unawaited(_loadGroupName());
+      unawaited(_loadGroupSettings());
     }
   }
 
@@ -285,7 +291,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     return groupName;
   }
 
-  Future<void> _loadGroupName() async {
+  Future<void> _loadGroupSettings() async {
     final userEmail = context.read<AuthProvider>().userEmail;
     if (userEmail == null) {
       return;
@@ -298,6 +304,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     if (cachedSettings != null && mounted) {
       setState(() {
         _groupName = cachedSettings.name;
+        _pricePerStrich = cachedSettings.pricePerStrich;
       });
     }
 
@@ -314,6 +321,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
       if (!mounted) return;
       setState(() {
         _groupName = freshSettings.name;
+        _pricePerStrich = freshSettings.pricePerStrich;
       });
     } on UnauthorizedException {
       return;
@@ -330,7 +338,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     );
     if (!mounted) return;
     await _loadCounter(showLoading: false);
-    await _loadGroupName();
+    await _loadGroupSettings();
   }
 
   Future<void> _handlePendingSyncTap(SyncProvider syncProvider) async {
@@ -574,7 +582,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
                     Text(_loadErrorMessage!, textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                     ElevatedButton.icon(
-                      onPressed: _loadCounter,
+                      onPressed: () => _loadCounter(),
                       icon: const Icon(Icons.refresh),
                       label: const Text('Erneut laden'),
                     ),
@@ -637,7 +645,14 @@ class _GroupHomePageState extends State<GroupHomePage> {
                           widget.groupId,
                           groupName: _groupNameForArgs(),
                         ),
-                      );
+                      ).then((_) async {
+                        if (!mounted) {
+                          return;
+                        }
+
+                        await _loadCounter(showLoading: false);
+                        await _loadGroupSettings();
+                      });
                     },
                   ),
                   ListTile(

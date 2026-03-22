@@ -101,21 +101,13 @@ class AppRoutes {
         {
           final args = _groupArgs(settings.arguments);
 
-          if (args == null ||
-              args['currentUserId'] is! String ||
-              (args['currentUserId'] as String).trim().isEmpty) {
+          if (args == null) {
             return _default(
               MaterialPageRoute(builder: (_) => const LoadingPage()),
             );
           }
 
-          return _slide(
-            GroupActivityPage(
-              groupId: args['groupId'] as int,
-              groupName: args['groupName'] as String?,
-              currentUserId: args['currentUserId'] as String,
-            ),
-          );
+          return _slide(GroupActivityPage(groupId: args['groupId'] as int));
         }
       case '/groupSettings':
         return _slide(GroupSettingsPage(groupId: settings.arguments as int));

@@ -661,25 +661,9 @@ class _GroupHomePageState extends State<GroupHomePage> {
                     subtitle: const Text('Aktivitäten anzeigen'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () {
-                      final currentUserId = context
-                          .read<AuthProvider>()
-                          .userEmail
-                          ?.trim();
-                      if (currentUserId == null || currentUserId.isEmpty) {
-                        Toast.show(
-                          context,
-                          'Benutzer konnte nicht geladen werden',
-                        );
-                        return;
-                      }
-
                       Navigator.of(context).pushNamed(
                         '/groupActivity',
-                        arguments: AppRoutes.groupArgs(
-                          widget.groupId,
-                          groupName: _groupNameForArgs(),
-                          extra: {'currentUserId': currentUserId},
-                        ),
+                        arguments: AppRoutes.groupArgs(widget.groupId),
                       );
                     },
                   ),

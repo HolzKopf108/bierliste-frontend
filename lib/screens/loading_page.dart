@@ -4,9 +4,11 @@ import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../models/group.dart';
 import '../providers/auth_provider.dart';
 import '../routes/app_routes.dart';
 import '../services/group_api_service.dart';
+import '../services/offline_group_activity_service.dart';
 import '../services/offline_group_users_service.dart';
 import '../services/http_service.dart';
 
@@ -87,12 +89,7 @@ class _LoadingPageState extends State<LoadingPage> {
       final groups = await _groupApiService.listGroups();
       final userEmail = _authProvider.userEmail;
       if (userEmail != null && groups.isNotEmpty) {
-        unawaited(
-          OfflineGroupUsersService.syncGroupMembersInBackground(
-            userEmail,
-            groups.map((group) => group.id),
-          ),
-        );
+        unawaited(_syncGroupCachesInBackground(userEmail, groups));
       }
 
       if (groups.isEmpty) {
@@ -120,6 +117,33 @@ class _LoadingPageState extends State<LoadingPage> {
       return null;
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<void> _syncGroupCachesInBackground(
+    String userEmail,
+    List<Group> groups,
+  ) async {
+    final groupIds = groups.map((group) => group.id).toList(growable: false);
+    if (groupIds.isEmpty) {
+      return;
+    }
+
+    try {
+      await Future.wait([
+        OfflineGroupUsersService.syncGroupMembersInBackground(
+          userEmail,
+          groupIds,
+        ),
+        OfflineGroupActivityService.syncGroupActivitiesInBackground(
+          userEmail,
+          groupIds,
+        ),
+      ]);
+    } on UnauthorizedException {
+      return;
+    } catch (_) {
+      return;
     }
   }
 

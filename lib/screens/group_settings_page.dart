@@ -745,7 +745,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 40),
           ],
         ),
       ),

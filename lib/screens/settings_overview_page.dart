@@ -4,6 +4,7 @@ import 'package:bierliste/services/user_api_service.dart';
 import 'package:bierliste/services/user_settings_api_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:bierliste/widgets/toast.dart';
+import 'package:bierliste/version.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -189,7 +190,16 @@ class SettingsOverviewPage extends StatelessWidget {
               onPressed: () => _logout(context),
             ),
           ),
-          const SizedBox(height: 75),
+          const SizedBox(height: 32),
+          Center(
+              child: Text(
+                'Version: $appVersion',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+          const SizedBox(height: 40),
         ],
       ),
     );

@@ -611,7 +611,7 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
                     children: [
                       Text(oldValue, style: theme.textTheme.bodyMedium),
                       Icon(
-                        Icons.arrow_forward,
+                        Icons.trending_flat,
                         size: 16,
                         color: theme.colorScheme.onSurfaceVariant,
                       ),

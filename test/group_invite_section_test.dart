@@ -4,6 +4,7 @@ import 'package:bierliste/models/group_invite.dart';
 import 'package:bierliste/models/group_member.dart';
 import 'package:bierliste/models/group_settings.dart';
 import 'package:bierliste/services/group_api_service.dart';
+import 'package:bierliste/utils/invite_link_builder.dart';
 import 'package:bierliste/widgets/group_invite_section.dart';
 import 'package:bierliste/widgets/toast.dart';
 import 'package:flutter/material.dart';
@@ -81,36 +82,35 @@ void main() {
     expect(button.onPressed, isNull);
   });
 
-  testWidgets('successful invite opens dialog and QR uses exact joinUrl', (
+  testWidgets('successful invite shows share link and QR uses custom scheme', (
     tester,
   ) async {
-    const joinUrl = 'bierliste://join?token=token-123';
+    const token = 'token-123';
+    final expectedQrLink = InviteLinkBuilder.buildAppLink(token);
+    final expectedShareLink = InviteLinkBuilder.buildShareLink(token);
 
     await pumpInviteSection(
       tester,
       invitePermission: GroupInvitePermission.onlyWarts,
       ownRole: GroupMemberRole.wart,
-      onCreateInvite: () async => const GroupInvite(
-        inviteId: 1,
-        token: 'token-123',
-        joinUrl: joinUrl,
-      ),
+      onCreateInvite: () async => const GroupInvite(inviteId: 1, token: token),
     );
 
     await tester.tap(find.byKey(const Key('createInviteButton')));
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('inviteLinkText')), findsOneWidget);
-    expect(find.text(joinUrl), findsOneWidget);
+    expect(find.text(expectedShareLink), findsOneWidget);
 
     final qrWidget = tester.widget<QrImageView>(
       find.byKey(const Key('inviteQrCode')),
     );
-    expect(qrWidget.semanticsLabel, joinUrl);
+    expect(qrWidget.semanticsLabel, expectedQrLink);
   });
 
   testWidgets('copy button copies full link', (tester) async {
-    const joinUrl = 'bierliste://join?token=token-copy';
+    const token = 'token-copy';
+    final expectedShareLink = InviteLinkBuilder.buildShareLink(token);
     String? copiedText;
     String? feedbackMessage;
 
@@ -118,11 +118,7 @@ void main() {
       tester,
       invitePermission: GroupInvitePermission.onlyWarts,
       ownRole: GroupMemberRole.wart,
-      onCreateInvite: () async => const GroupInvite(
-        inviteId: 2,
-        token: 'token-copy',
-        joinUrl: joinUrl,
-      ),
+      onCreateInvite: () async => const GroupInvite(inviteId: 2, token: token),
       onCopy: (text) async {
         copiedText = text;
       },
@@ -136,7 +132,7 @@ void main() {
     await tester.tap(find.byKey(const Key('copyInviteLinkButton')));
     await tester.pumpAndSettle();
 
-    expect(copiedText, joinUrl);
+    expect(copiedText, expectedShareLink);
     expect(feedbackMessage, 'Link kopiert');
   });
 
@@ -161,13 +157,7 @@ void main() {
 
     expect(requestCount, 1);
 
-    completer.complete(
-      const GroupInvite(
-        inviteId: 3,
-        token: 'token-pending',
-        joinUrl: 'bierliste://join?token=token-pending',
-      ),
-    );
+    completer.complete(const GroupInvite(inviteId: 3, token: 'token-pending'));
     await tester.pumpAndSettle();
   });
 

@@ -5,6 +5,7 @@ import 'package:bierliste/models/group_invite.dart';
 import 'package:bierliste/models/group_member.dart';
 import 'package:bierliste/models/group_settings.dart';
 import 'package:bierliste/services/group_api_service.dart';
+import 'package:bierliste/utils/invite_link_builder.dart';
 import 'package:bierliste/widgets/toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -207,12 +208,16 @@ class _InviteLinkDialog extends StatelessWidget {
     this.onFeedback,
   });
 
+  String get _appLink => InviteLinkBuilder.buildAppLink(invite.token);
+
+  String get _shareLink => InviteLinkBuilder.buildShareLink(invite.token);
+
   Future<void> _copyInviteLink(BuildContext context) async {
     try {
       final clipboardWriter =
           writeToClipboard ??
           (text) => Clipboard.setData(ClipboardData(text: text));
-      await clipboardWriter(invite.joinUrl);
+      await clipboardWriter(_shareLink);
 
       if (!context.mounted) {
         return;
@@ -230,10 +235,7 @@ class _InviteLinkDialog extends StatelessWidget {
       }
 
       if (onFeedback != null) {
-        onFeedback!(
-          'Link konnte nicht kopiert werden',
-          type: ToastType.error,
-        );
+        onFeedback!('Link konnte nicht kopiert werden', type: ToastType.error);
         return;
       }
 
@@ -283,8 +285,8 @@ class _InviteLinkDialog extends StatelessWidget {
                     ),
                     child: QrImageView(
                       key: const Key('inviteQrCode'),
-                      data: invite.joinUrl,
-                      semanticsLabel: invite.joinUrl,
+                      data: _appLink,
+                      semanticsLabel: _appLink,
                       version: QrVersions.auto,
                       size: qrSize,
                       backgroundColor: Colors.white,
@@ -300,19 +302,18 @@ class _InviteLinkDialog extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  'Link',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
+                Text('Link', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: SelectableText(
-                    invite.joinUrl,
+                    _shareLink,
                     key: const Key('inviteLinkText'),
                   ),
                 ),

@@ -33,4 +33,12 @@ void main() {
 
     expect(token, 'custom-path-token');
   });
+
+  test('parses token from share link path', () {
+    final token = InviteLinkParser.parseToken(
+      Uri.parse('https://bierliste.koelker-recke.de/invites/share-token'),
+    );
+
+    expect(token, 'share-token');
+  });
 }

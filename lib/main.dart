@@ -10,6 +10,7 @@ import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/sync_provider.dart';
 import 'services/connectivity_service.dart';
+import 'services/invite_link_service.dart';
 import 'app.dart';
 import 'package:bierliste/models/user_settings.dart';
 
@@ -23,7 +24,10 @@ void main() async {
   Hive.registerAdapter(UserAdapter());
 
   final themeProvider = ThemeProvider();
+  final inviteLinkService = InviteLinkService();
+
   themeProvider.initialize();
+  await inviteLinkService.initialize();
 
   runApp(
     MultiProvider(
@@ -34,6 +38,7 @@ void main() async {
         ChangeNotifierProvider(create: (_) => UserProvider()),
         ChangeNotifierProvider(create: (_) => GroupRoleProvider()),
         Provider(create: (_) => ConnectivityService()),
+        Provider.value(value: inviteLinkService),
       ],
       child: const BierlisteApp(),
     ),

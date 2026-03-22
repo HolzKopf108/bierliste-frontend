@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:bierliste/config/app_config.dart';
 import 'package:bierliste/models/group.dart';
+import 'package:bierliste/models/group_invite.dart';
 import 'package:bierliste/models/group_member.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
@@ -18,6 +19,8 @@ class GroupApiException implements Exception {
 class GroupApiService {
   String get _groupsBase =>
       '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}/groups';
+  String get _invitesBase =>
+      '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}/invites';
 
   Future<List<Group>> listGroups() async {
     try {
@@ -194,22 +197,32 @@ class GroupApiService {
     );
   }
 
-  Future<void> joinGroup(int groupId) async {
+  Future<GroupInvite> createInvite(int groupId) async {
     try {
       final response = await HttpService.authorizedRequest(
-        '$_groupsBase/$groupId/join',
+        '$_groupsBase/$groupId/invites',
         'POST',
       );
-      _ensureSuccess(response, 'Beitritt zur Gruppe fehlgeschlagen');
+      _ensureSuccess(response, 'Einladungslink konnte nicht erstellt werden');
+
+      final data = _decode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw GroupApiException('Ungültige Serverantwort');
+      }
+
+      return GroupInvite.fromJson(data);
     } on UnauthorizedException {
       rethrow;
     } on TokenRefreshException catch (e) {
-      debugPrint('joinGroup Token-Refresh-Fehler: ${e.message}');
+      debugPrint('createInvite Token-Refresh-Fehler: ${e.message}');
       throw GroupApiException(e.message);
+    } on FormatException catch (e) {
+      debugPrint('createInvite Parse-Fehler: $e');
+      throw GroupApiException('Ungültige Serverantwort');
     } on GroupApiException {
       rethrow;
     } catch (e) {
-      debugPrint('joinGroup Fehler: $e');
+      debugPrint('createInvite Fehler: $e');
       throw GroupApiException('Netzwerkfehler');
     }
   }
@@ -230,6 +243,36 @@ class GroupApiService {
       rethrow;
     } catch (e) {
       debugPrint('leaveGroup Fehler: $e');
+      throw GroupApiException('Netzwerkfehler');
+    }
+  }
+
+  Future<Group> joinGroupByInviteToken(String token) async {
+    try {
+      final response = await HttpService.authorizedRequest(
+        '$_invitesBase/${Uri.encodeComponent(token)}/join',
+        'POST',
+      );
+      _ensureSuccess(response, 'Beitritt zur Gruppe fehlgeschlagen');
+
+      final data = _decode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw GroupApiException('Ungültige Serverantwort');
+      }
+
+      return Group.fromJson(data);
+    } on UnauthorizedException {
+      rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('joinGroupByInviteToken Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
+    } on FormatException catch (e) {
+      debugPrint('joinGroupByInviteToken Parse-Fehler: $e');
+      throw GroupApiException('Ungültige Serverantwort');
+    } on GroupApiException {
+      rethrow;
+    } catch (e) {
+      debugPrint('joinGroupByInviteToken Fehler: $e');
       throw GroupApiException('Netzwerkfehler');
     }
   }

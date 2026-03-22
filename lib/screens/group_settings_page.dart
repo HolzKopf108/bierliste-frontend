@@ -16,6 +16,7 @@ import '../services/group_settings_api_service.dart';
 import '../services/http_service.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/money_input_formatter.dart';
+import '../widgets/group_invite_section.dart';
 import '../widgets/toast.dart';
 
 class _DecimalSeparatorInputFormatter extends TextInputFormatter {
@@ -57,6 +58,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   bool _isLeaving = false;
   bool _onlyWartsCanBookForOthers = false;
   bool _allowArbitraryMoneySettlements = false;
+  GroupInvitePermission _invitePermission = GroupInvitePermission.onlyWarts;
   String? _loadErrorMessage;
 
   @override
@@ -204,6 +206,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       pricePerStrich: pricePerStrich,
       onlyWartsCanBookForOthers: _onlyWartsCanBookForOthers,
       allowArbitraryMoneySettlements: _allowArbitraryMoneySettlements,
+      invitePermission: _invitePermission,
     );
 
     try {
@@ -282,6 +285,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         .replaceAll('.', ',');
     _onlyWartsCanBookForOthers = settings.onlyWartsCanBookForOthers;
     _allowArbitraryMoneySettlements = settings.allowArbitraryMoneySettlements;
+    _invitePermission = settings.invitePermission;
   }
 
   double? _parsePricePerStrich(String value) {
@@ -368,6 +372,40 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     return !canEditSettings || isRoleLoading || _isSaving || _isLeaving;
   }
 
+  Widget _buildSectionCard({
+    required String title,
+    String? subtitle,
+    required List<Widget> children,
+  }) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.titleMedium),
+          if (subtitle != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+
   String get _moneySettlementHelpMessage =>
       'Wenn aktiviert, dürfen Bierlistenwarte beliebige Geldbeträge abziehen. '
       'Es wird immer auf volle Striche abgerundet und der Restbetrag ignoriert. '
@@ -378,6 +416,11 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
       'Wenn aktiviert, dürfen nur Bierlistenwarte für andere Mitglieder '
       'buchen. Wenn deaktiviert, dürfen alle Mitglieder auch für andere '
       'buchen.';
+
+  String get _invitePermissionHelpMessage =>
+      'Wenn aktiviert, dürfen nur Bierlistenwarte neue Mitglieder einladen. '
+      'Wenn deaktiviert, dürfen alle Gruppenmitglieder Einladungslinks '
+      'erstellen.';
 
   Future<void> _showOnlyWartsCanBookForOthersHelpDialog() async {
     await showDialog<void>(
@@ -404,6 +447,24 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         return AlertDialog(
           title: const Text('Hinweis zu Geldabzügen'),
           content: Text(_moneySettlementHelpMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Schließen'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _showInvitePermissionHelpDialog() async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Hinweis zu Einladungen'),
+          content: Text(_invitePermissionHelpMessage),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
@@ -477,6 +538,27 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
         setState(() => _allowArbitraryMoneySettlements = value);
       },
       onInfoTap: _showMoneySettlementHelpDialog,
+    );
+  }
+
+  Widget _buildInvitePermissionSection(bool canEditSettings) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSwitchSettingTile(
+          canEditSettings: canEditSettings,
+          title: 'Nur Bierlistenwarte dürfen einladen',
+          value: _invitePermission == GroupInvitePermission.onlyWarts,
+          onChanged: (value) {
+            setState(() {
+              _invitePermission = value
+                  ? GroupInvitePermission.onlyWarts
+                  : GroupInvitePermission.allMembers;
+            });
+          },
+          onInfoTap: _showInvitePermissionHelpDialog,
+        ),
+      ],
     );
   }
 
@@ -609,69 +691,95 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
           children: [
             const SizedBox(height: 5),
             _buildRoleLoadingHint(isRoleLoading),
-            const SizedBox(height: 30),
+            const SizedBox(height: 5),
             _buildPermissionHint(isRoleLoading, canEditSettings),
-            TextFormField(
-              controller: _groupNameController,
-              textInputAction: TextInputAction.next,
-              readOnly: _isReadOnly(canEditSettings),
-              decoration: const InputDecoration(
-                labelText: 'Gruppenname',
-                border: OutlineInputBorder(),
-              ),
-              validator: (value) {
-                final trimmed = value?.trim() ?? '';
-                if (trimmed.length < 3) {
-                  return 'Gruppenname muss mindestens 3 Zeichen lang sein';
-                }
-                return null;
-              },
-            ),
-            const SizedBox(height: 30),
-            TextFormField(
-              controller: _pricePerStrichController,
-              readOnly: _isReadOnly(canEditSettings),
-              keyboardType: const TextInputType.numberWithOptions(
-                decimal: true,
-              ),
-              textInputAction: TextInputAction.done,
-              inputFormatters: <TextInputFormatter>[
-                _DecimalSeparatorInputFormatter(),
-                MoneyInputFormatter(),
+            _buildSectionCard(
+              title: 'Allgemein',
+              subtitle: 'Name, Preis und Berechtigungen der Gruppe',
+              children: [
+                TextFormField(
+                  controller: _groupNameController,
+                  textInputAction: TextInputAction.next,
+                  readOnly: _isReadOnly(canEditSettings),
+                  decoration: const InputDecoration(
+                    labelText: 'Gruppenname',
+                    border: OutlineInputBorder(),
+                  ),
+                  validator: (value) {
+                    final trimmed = value?.trim() ?? '';
+                    if (trimmed.length < 3) {
+                      return 'Gruppenname muss mindestens 3 Zeichen lang sein';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 20),
+                TextFormField(
+                  controller: _pricePerStrichController,
+                  readOnly: _isReadOnly(canEditSettings),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: <TextInputFormatter>[
+                    _DecimalSeparatorInputFormatter(),
+                    MoneyInputFormatter(),
+                  ],
+                  decoration: const InputDecoration(
+                    labelText: 'Preis pro Strich',
+                    border: OutlineInputBorder(),
+                    suffixText: 'EUR',
+                  ),
+                  validator: _validatePricePerStrich,
+                ),
+                const SizedBox(height: 20),
+                _buildBookingForOthersTile(canEditSettings),
+                const SizedBox(height: 12),
+                _buildMoneySettlementTile(canEditSettings),
+                const SizedBox(height: 12),
+                _buildInvitePermissionSection(canEditSettings),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save),
+                    label: const Text('Speichern'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    onPressed: _isSaveDisabled(canEditSettings, isRoleLoading)
+                        ? null
+                        : _saveSettings,
+                  ),
+                ),
               ],
-              decoration: const InputDecoration(
-                labelText: 'Preis pro Strich',
-                border: OutlineInputBorder(),
-                suffixText: 'EUR',
-              ),
-              validator: _validatePricePerStrich,
             ),
-            const SizedBox(height: 30),
-            _buildBookingForOthersTile(canEditSettings),
-            const SizedBox(height: 20),
-            _buildMoneySettlementTile(canEditSettings),
-            const SizedBox(height: 30),
-            ElevatedButton.icon(
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save),
-              label: const Text('Speichern'),
-              style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                textStyle: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              onPressed: _isSaveDisabled(canEditSettings, isRoleLoading)
-                  ? null
-                  : _saveSettings,
+            const SizedBox(height: 24),
+            _buildSectionCard(
+              title: 'Einladungen',
+              subtitle: 'Einladungslink erstellen und weitergeben',
+              children: [
+                GroupInviteSection(
+                  groupId: widget.groupId,
+                  invitePermission: _invitePermission,
+                  ownRole: ownRole,
+                  isRoleLoading: isRoleLoading,
+                  onCreateInvite: () =>
+                      _groupApiService.createInvite(widget.groupId),
+                ),
+              ],
             ),
-            const SizedBox(height: 80),
+            const SizedBox(height: 48),
             Row(
               children: const [
                 Expanded(child: Divider()),
@@ -688,7 +796,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 Expanded(child: Divider()),
               ],
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
             Container(
               decoration: BoxDecoration(
                 color: theme.colorScheme.error.withValues(alpha: 0.1),
@@ -736,16 +844,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
                 ],
               ),
             ),
-            const SizedBox(height: 32),
-            Center(
-              child: Text(
-                'Gruppen-ID: ${widget.groupId}',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 50),
           ],
         ),
       ),

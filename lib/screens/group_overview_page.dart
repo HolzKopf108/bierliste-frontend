@@ -12,15 +12,20 @@ import '../services/http_service.dart';
 
 class GroupOverviewPage extends StatefulWidget {
   final int? previousGroupId;
+  final GroupApiService? groupApiService;
 
-  const GroupOverviewPage({super.key, this.previousGroupId});
+  const GroupOverviewPage({
+    super.key,
+    this.previousGroupId,
+    this.groupApiService,
+  });
 
   @override
   State<GroupOverviewPage> createState() => _GroupOverviewPageState();
 }
 
 class _GroupOverviewPageState extends State<GroupOverviewPage> {
-  final GroupApiService _groupApiService = GroupApiService();
+  late final GroupApiService _groupApiService;
   final List<Group> _groups = [];
   int? _favoriteGroupId;
   int? _previousGroupId;
@@ -28,12 +33,12 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
   bool _prefsLoaded = false;
   bool _isLoading = true;
   bool _isCreating = false;
-  bool _isJoining = false;
   String? _loadErrorMessage;
 
   @override
   void initState() {
     super.initState();
+    _groupApiService = widget.groupApiService ?? GroupApiService();
     _previousGroupId = widget.previousGroupId;
     _initialize();
   }
@@ -183,74 +188,6 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
     }
   }
 
-  Future<void> _joinGroup() async {
-    final groupId = await showDialog<int>(
-      context: context,
-      builder: (context) {
-        final controller = TextEditingController();
-        return AlertDialog(
-          title: const Text('Gruppe beitreten'),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(
-              hintText: 'Gruppen-ID',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Abbrechen'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final id = int.tryParse(controller.text.trim());
-                if (id != null && id > 0) {
-                  Navigator.of(context).pop(id);
-                }
-              },
-              child: const Text('Beitreten'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (groupId == null) return;
-
-    setState(() {
-      _isJoining = true;
-    });
-
-    try {
-      await _groupApiService.joinGroup(groupId);
-      if (!mounted) return;
-      await _loadGroups();
-      if (!mounted) return;
-      Toast.show(
-        context,
-        'Gruppe erfolgreich beigetreten',
-        type: ToastType.success,
-      );
-    } on UnauthorizedException {
-      return;
-    } on GroupApiException catch (e) {
-      if (!mounted) return;
-      Toast.show(context, e.message);
-    } catch (_) {
-      if (!mounted) return;
-      Toast.show(context, 'Beitritt zur Gruppe fehlgeschlagen');
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isJoining = false;
-        });
-      }
-    }
-  }
-
   void _openGroup(Group group) {
     if (group.id == _previousGroupId) {
       safePop(context);
@@ -295,25 +232,18 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
       appBar: AppBar(
         automaticallyImplyLeading: false,
         title: const Text('Gruppenübersicht'),
-        actions: [
-          IconButton(
-            onPressed: _isJoining ? null : _joinGroup,
-            icon: _isJoining
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.group_add),
-            tooltip: 'Gruppe beitreten',
-          ),
-        ],
         leading: canGoBack
             ? IconButton(
                 icon: const Icon(Icons.arrow_back),
                 onPressed: () => Navigator.pop(context),
               )
             : null,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Navigator.pushNamed(context, '/settings'),
+          ),
+        ],
       ),
       body: !_prefsLoaded || _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -352,7 +282,7 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Erstelle eine neue Gruppe oder tritt einer bestehenden Gruppe bei.',
+                      'Erstelle eine neue Gruppe oder öffne einen Einladungslink.',
                       textAlign: TextAlign.center,
                     ),
                   ],

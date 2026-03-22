@@ -53,6 +53,14 @@
 					<string>com.googleusercontent.apps.454295655792-fh5sdmfvis4p2ee09736kqjo47q8ar8b</string>
 				</array>
 			</dict>
+			<dict>
+				<key>CFBundleURLName</key>
+				<string>bierliste</string>
+				<key>CFBundleURLSchemes</key>
+				<array>
+					<string>bierliste</string>
+				</array>
+			</dict>
 		</array>
 		<key>LSApplicationQueriesSchemes</key>
 		<array>

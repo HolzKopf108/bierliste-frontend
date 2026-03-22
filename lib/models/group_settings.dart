@@ -1,14 +1,35 @@
+enum GroupInvitePermission {
+  onlyWarts('ONLY_WARTS'),
+  allMembers('ALL_MEMBERS');
+
+  final String jsonValue;
+
+  const GroupInvitePermission(this.jsonValue);
+
+  static GroupInvitePermission fromJsonValue(dynamic value) {
+    switch (value?.toString().trim().toUpperCase()) {
+      case 'ALL_MEMBERS':
+        return GroupInvitePermission.allMembers;
+      case 'ONLY_WARTS':
+      default:
+        return GroupInvitePermission.onlyWarts;
+    }
+  }
+}
+
 class GroupSettings {
   final String name;
   final double pricePerStrich;
   final bool onlyWartsCanBookForOthers;
   final bool allowArbitraryMoneySettlements;
+  final GroupInvitePermission invitePermission;
 
   const GroupSettings({
     required this.name,
     required this.pricePerStrich,
     required this.onlyWartsCanBookForOthers,
     required this.allowArbitraryMoneySettlements,
+    required this.invitePermission,
   });
 
   factory GroupSettings.fromJson(Map<String, dynamic> json) {
@@ -18,6 +39,9 @@ class GroupSettings {
       onlyWartsCanBookForOthers: json['onlyWartsCanBookForOthers'] == true,
       allowArbitraryMoneySettlements:
           json['allowArbitraryMoneySettlements'] == true,
+      invitePermission: GroupInvitePermission.fromJsonValue(
+        json['invitePermission'],
+      ),
     );
   }
 
@@ -27,6 +51,7 @@ class GroupSettings {
       'pricePerStrich': pricePerStrich,
       'onlyWartsCanBookForOthers': onlyWartsCanBookForOthers,
       'allowArbitraryMoneySettlements': allowArbitraryMoneySettlements,
+      'invitePermission': invitePermission.jsonValue,
     };
   }
 

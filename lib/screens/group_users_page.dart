@@ -1038,7 +1038,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mitgliederübersicht'),
+        title: const Text('Mitglieder'),
         actions: [
           IconButton(
             icon: Icon(

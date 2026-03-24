@@ -40,6 +40,11 @@ class GroupUsersPage extends StatefulWidget {
 }
 
 class _GroupUsersPageState extends State<GroupUsersPage> {
+  static const Duration _quickBookCooldown = Duration(milliseconds: 700);
+  static const Duration _quickBookAnimationDuration = Duration(
+    milliseconds: 180,
+  );
+
   List<GroupMember> _members = [];
   SortOption _sortOption = SortOption.alphabet;
   GroupSettings? _groupSettings;
@@ -50,6 +55,11 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   SyncProvider? _syncProvider;
   bool _wasOnline = false;
   bool _wasSyncing = false;
+  final Map<int, DateTime> _quickBookCooldownsByUserId = {};
+  final Map<int, Timer> _quickBookCooldownTimersByUserId = {};
+  final Set<int> _pressedMemberUserIds = <int>{};
+  final Set<int> _animatedQuickBookUserIds = <int>{};
+  final Map<int, Timer> _quickBookAnimationTimersByUserId = {};
 
   @override
   void initState() {
@@ -76,6 +86,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   @override
   void dispose() {
     _syncProvider?.removeListener(_handleSyncProviderChanged);
+    _clearQuickBookCooldowns();
+    _clearQuickBookAnimations();
     super.dispose();
   }
 
@@ -296,6 +308,14 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       return;
     }
 
+    await _submitBookStricheAction(member, amount);
+  }
+
+  Future<void> _submitBookStricheAction(GroupMember member, int amount) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
     final successMessage = amount == 1
         ? 'Strich für ${member.username} gebucht'
         : '$amount Striche für ${member.username} gebucht';
@@ -318,6 +338,110 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       toastActionLabel: 'Rückgängig',
       onToastActionTap: () {},
     );
+  }
+
+  bool _isQuickBookCoolingDown(int userId) {
+    final cooldownUntil = _quickBookCooldownsByUserId[userId];
+    if (cooldownUntil == null) {
+      return false;
+    }
+
+    return cooldownUntil.isAfter(DateTime.now());
+  }
+
+  void _startQuickBookCooldown(int userId) {
+    _quickBookCooldownTimersByUserId.remove(userId)?.cancel();
+    final cooldownUntil = DateTime.now().add(_quickBookCooldown);
+
+    setState(() {
+      _quickBookCooldownsByUserId[userId] = cooldownUntil;
+    });
+
+    _quickBookCooldownTimersByUserId[userId] = Timer(_quickBookCooldown, () {
+      _quickBookCooldownTimersByUserId.remove(userId);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _quickBookCooldownsByUserId.remove(userId);
+      });
+    });
+  }
+
+  void _clearQuickBookCooldowns() {
+    for (final timer in _quickBookCooldownTimersByUserId.values) {
+      timer.cancel();
+    }
+    _quickBookCooldownTimersByUserId.clear();
+    _quickBookCooldownsByUserId.clear();
+  }
+
+  void _setMemberPressed(int userId, bool isPressed) {
+    if (isPressed) {
+      if (_pressedMemberUserIds.contains(userId)) {
+        return;
+      }
+      setState(() {
+        _pressedMemberUserIds.add(userId);
+      });
+      return;
+    }
+
+    if (!_pressedMemberUserIds.contains(userId)) {
+      return;
+    }
+
+    setState(() {
+      _pressedMemberUserIds.remove(userId);
+    });
+  }
+
+  void _triggerQuickBookAnimation(int userId) {
+    _quickBookAnimationTimersByUserId.remove(userId)?.cancel();
+
+    setState(() {
+      _animatedQuickBookUserIds.add(userId);
+    });
+
+    _quickBookAnimationTimersByUserId[userId] = Timer(
+      _quickBookAnimationDuration,
+      () {
+        _quickBookAnimationTimersByUserId.remove(userId);
+        if (!mounted) {
+          return;
+        }
+
+        setState(() {
+          _animatedQuickBookUserIds.remove(userId);
+        });
+      },
+    );
+  }
+
+  void _clearQuickBookAnimations() {
+    for (final timer in _quickBookAnimationTimersByUserId.values) {
+      timer.cancel();
+    }
+    _quickBookAnimationTimersByUserId.clear();
+    _animatedQuickBookUserIds.clear();
+    _pressedMemberUserIds.clear();
+  }
+
+  Future<void> _handleQuickBookDoubleTap(GroupMember member) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    if (_isQuickBookCoolingDown(member.userId)) {
+      return;
+    }
+
+    _setMemberPressed(member.userId, false);
+    _triggerQuickBookAnimation(member.userId);
+    _startQuickBookCooldown(member.userId);
+    await HapticFeedback.selectionClick();
+    await _submitBookStricheAction(member, 1);
   }
 
   Future<void> _handleRoleAction(
@@ -1150,6 +1274,20 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return statusCode == 403 || statusCode == 404;
   }
 
+  Widget _buildQuickBookHint(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        'Doppelklick auf einen Nutzer bucht 1 Strich.',
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w500,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1158,6 +1296,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       widget.groupId,
     );
     final sortedMembers = _sortedMembers();
+    final canQuickBook = _canBookForOtherMembers(ownRole);
+    final quickBookItemOffset = canQuickBook ? 1 : 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -1227,9 +1367,13 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   horizontal: 12,
                   vertical: 14,
                 ),
-                itemCount: sortedMembers.length,
+                itemCount: sortedMembers.length + quickBookItemOffset,
                 itemBuilder: (context, index) {
-                  final member = sortedMembers[index];
+                  if (canQuickBook && index == 0) {
+                    return _buildQuickBookHint(theme);
+                  }
+
+                  final member = sortedMembers[index - quickBookItemOffset];
                   final menuEntries = _buildMemberMenuEntries(member, ownRole);
                   final strichLabel = _strichLabel(member.strichCount);
                   final memberAmountText = _memberAmountText(member);
@@ -1237,143 +1381,229 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   final showMemberMenu = menuEntries.isNotEmpty;
                   final isUpdatingMember =
                       _updatingMemberUserId == member.userId;
+                  final isQuickBookCoolingDown = _isQuickBookCoolingDown(
+                    member.userId,
+                  );
+                  final isPressed = _pressedMemberUserIds.contains(
+                    member.userId,
+                  );
+                  final isQuickBookAnimating = _animatedQuickBookUserIds
+                      .contains(member.userId);
+                  final quickBookHighlight =
+                      isQuickBookCoolingDown || isQuickBookAnimating;
+                  final cardColor = quickBookHighlight
+                      ? theme.colorScheme.primaryContainer.withValues(
+                          alpha: isQuickBookAnimating ? 0.65 : 0.4,
+                        )
+                      : theme.cardColor;
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: theme.cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black12, blurRadius: 4),
-                        ],
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.person),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  member.username,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
+                    child: AnimatedScale(
+                      scale: isPressed || isQuickBookAnimating ? 0.985 : 1,
+                      duration: const Duration(milliseconds: 110),
+                      curve: Curves.easeOutCubic,
+                      child: AnimatedContainer(
+                        padding: const EdgeInsets.all(12),
+                        duration: const Duration(milliseconds: 140),
+                        curve: Curves.easeOutCubic,
+                        decoration: BoxDecoration(
+                          color: cardColor,
+                          borderRadius: BorderRadius.circular(12),
+                          border: quickBookHighlight
+                              ? Border.all(
+                                  color: theme.colorScheme.primary.withValues(
+                                    alpha: isQuickBookAnimating ? 0.45 : 0.22,
                                   ),
-                                ),
-                                if (showWartBadge) ...[
-                                  const SizedBox(height: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 7,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primaryContainer,
-                                      borderRadius: BorderRadius.circular(999),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(
-                                          Icons.verified_user,
-                                          size: 13,
-                                          color: theme
-                                              .colorScheme
-                                              .onPrimaryContainer,
-                                        ),
-                                        const SizedBox(width: 4),
-                                        Text(
-                                          'Bierlistenwart',
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w600,
-                                            color: theme
-                                                .colorScheme
-                                                .onPrimaryContainer,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ],
+                                )
+                              : null,
+                          boxShadow: [
+                            BoxShadow(
+                              color: quickBookHighlight
+                                  ? theme.colorScheme.primary.withValues(
+                                      alpha: 0.12,
+                                    )
+                                  : Colors.black12,
+                              blurRadius: quickBookHighlight ? 8 : 4,
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          SizedBox(
-                            width: 96,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  member.strichCount.toString(),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.w700,
-                                    color: primaryColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 1),
-                                Text(
-                                  strichLabel,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: theme.hintColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 1),
-                                if (memberAmountText != null) ...[
-                                  Text(
-                                    memberAmountText,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: theme.colorScheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                          if (showMemberMenu) ...[
-                            const SizedBox(width: 8),
-                            isUpdatingMember
-                                ? SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: theme.colorScheme.primary,
-                                    ),
-                                  )
-                                : PopupMenuButton<_MemberAction>(
-                                    tooltip: 'Aktionen',
-                                    icon: const Icon(Icons.more_horiz_rounded),
-                                    position: PopupMenuPosition.under,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(16),
-                                    ),
-                                    onSelected: (action) =>
-                                        _handlePopupAction(member, action),
-                                    itemBuilder: (context) => menuEntries,
-                                  ),
                           ],
-                        ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(10),
+                                  onTapDown: canQuickBook
+                                      ? (_) => _setMemberPressed(
+                                          member.userId,
+                                          true,
+                                        )
+                                      : null,
+                                  onTapCancel: canQuickBook
+                                      ? () => _setMemberPressed(
+                                          member.userId,
+                                          false,
+                                        )
+                                      : null,
+                                  onTapUp: canQuickBook
+                                      ? (_) => _setMemberPressed(
+                                          member.userId,
+                                          false,
+                                        )
+                                      : null,
+                                  onDoubleTap: canQuickBook
+                                      ? () => _handleQuickBookDoubleTap(member)
+                                      : null,
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                    children: [
+                                      const Icon(Icons.person),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              member.username,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                fontSize: 16,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                            ),
+                                            if (showWartBadge) ...[
+                                              const SizedBox(height: 6),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 7,
+                                                      vertical: 3,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: theme
+                                                      .colorScheme
+                                                      .primaryContainer,
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                        999,
+                                                      ),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize:
+                                                      MainAxisSize.min,
+                                                  children: [
+                                                    Icon(
+                                                      Icons.verified_user,
+                                                      size: 13,
+                                                      color: theme
+                                                          .colorScheme
+                                                          .onPrimaryContainer,
+                                                    ),
+                                                    const SizedBox(width: 4),
+                                                    Text(
+                                                      'Bierlistenwart',
+                                                      maxLines: 1,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
+                                                      style: TextStyle(
+                                                        fontSize: 12,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                        color: theme
+                                                            .colorScheme
+                                                            .onPrimaryContainer,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      SizedBox(
+                                        width: 96,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              member.strichCount.toString(),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 20,
+                                                fontWeight: FontWeight.w700,
+                                                color: primaryColor,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            Text(
+                                              strichLabel,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: theme.hintColor,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 1),
+                                            if (memberAmountText != null) ...[
+                                              Text(
+                                                memberAmountText,
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: theme
+                                                      .colorScheme
+                                                      .onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            if (showMemberMenu) ...[
+                              const SizedBox(width: 8),
+                              isUpdatingMember
+                                  ? SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: theme.colorScheme.primary,
+                                      ),
+                                    )
+                                  : PopupMenuButton<_MemberAction>(
+                                      tooltip: 'Aktionen',
+                                      icon: const Icon(
+                                        Icons.more_horiz_rounded,
+                                      ),
+                                      position: PopupMenuPosition.under,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      onSelected: (action) =>
+                                          _handlePopupAction(member, action),
+                                      itemBuilder: (context) => menuEntries,
+                                    ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
                   );

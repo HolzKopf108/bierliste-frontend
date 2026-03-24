@@ -1,19 +1,26 @@
 import 'dart:async';
 
 import 'package:bierliste/models/group_member.dart';
+import 'package:bierliste/models/group.dart';
 import 'package:bierliste/models/group_settings.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../providers/auth_provider.dart';
 import '../providers/group_role_provider.dart';
 import '../providers/sync_provider.dart';
 import '../services/connectivity_service.dart';
+import '../services/group_role_cache_service.dart';
 import '../services/offline_group_settings_service.dart';
+import '../services/offline_group_activity_service.dart';
+import '../services/offline_group_users_service.dart';
+import '../services/offline_strich_service.dart';
 import '../services/group_api_service.dart';
 import '../services/group_settings_api_service.dart';
 import '../services/http_service.dart';
+import '../services/pending_sync_queue_service.dart';
 import '../utils/navigation_helper.dart';
 import '../utils/money_input_formatter.dart';
 import '../widgets/group_invite_section.dart';
@@ -372,6 +379,32 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
     return !canEditSettings || isRoleLoading || _isSaving || _isLeaving;
   }
 
+  Future<bool> _showLeaveConfirmationDialog() async {
+    return (await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Gruppe verlassen'),
+              content: const Text(
+                'Möchtest du diese Gruppe wirklich verlassen?\n'
+                'Du musst danach erneut eingeladen werden, um wieder beizutreten.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  child: const Text('Verlassen'),
+                ),
+              ],
+            );
+          },
+        )) ??
+        false;
+  }
+
   Widget _buildSectionCard({
     required String title,
     String? subtitle,
@@ -611,28 +644,113 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
 
   Future<void> _leaveGroup() async {
     if (_isLeaving) return;
+
+    final confirmed = await _showLeaveConfirmationDialog();
+    if (!mounted || !confirmed) {
+      return;
+    }
+
+    final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
+    final syncProvider = context.read<SyncProvider>();
     setState(() => _isLeaving = true);
 
     try {
       await _groupApiService.leaveGroup(widget.groupId);
+
+      await _refreshFavoriteAfterLeave();
+      if (userEmail != null) {
+        await _clearLocalGroupState(userEmail);
+      }
+      groupRoleProvider.removeGroup(widget.groupId);
+      await syncProvider.refreshPendingSyncStatus();
+
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gruppe erfolgreich verlassen')),
-      );
-      safePushNamedAndRemoveUntil(context, '/groups');
+      await safePushNamedAndRemoveUntil(context, '/groups');
     } on UnauthorizedException {
       return;
     } on GroupApiException catch (e) {
       if (!mounted) return;
-      Toast.show(context, e.message);
+      Toast.show(
+        context,
+        _friendlyLeaveErrorMessage(e),
+        type: e.statusCode == 403 || e.statusCode == 404
+            ? ToastType.warning
+            : ToastType.error,
+      );
     } catch (_) {
       if (!mounted) return;
-      Toast.show(context, 'Fehler beim Verlassen der Gruppe');
+      Toast.show(context, 'Gruppe konnte nicht verlassen werden');
     } finally {
       if (mounted) {
         setState(() => _isLeaving = false);
       }
     }
+  }
+
+  Future<void> _refreshFavoriteAfterLeave() async {
+    final prefs = await SharedPreferences.getInstance();
+    final favoriteGroupId = prefs.getInt('favoriteGroupId');
+    if (favoriteGroupId != widget.groupId) {
+      return;
+    }
+
+    try {
+      final groups = await _groupApiService.listGroups();
+      await _saveFavoriteAfterLeave(prefs, groups);
+    } catch (_) {
+      await prefs.remove('favoriteGroupId');
+    }
+  }
+
+  Future<void> _saveFavoriteAfterLeave(
+    SharedPreferences prefs,
+    List<Group> groups,
+  ) async {
+    if (groups.isEmpty) {
+      await prefs.remove('favoriteGroupId');
+      return;
+    }
+
+    await prefs.setInt('favoriteGroupId', groups.first.id);
+  }
+
+  Future<void> _clearLocalGroupState(String userEmail) async {
+    await PendingSyncQueueService.removeGroupOperations(
+      userEmail,
+      widget.groupId,
+    );
+    await Future.wait([
+      OfflineGroupUsersService.clearGroupMembers(userEmail, widget.groupId),
+      OfflineGroupSettingsService.clearGroupSettings(userEmail, widget.groupId),
+      OfflineGroupActivityService.clearGroupActivities(
+        userEmail,
+        widget.groupId,
+      ),
+      OfflineStrichService.clearGroupData(userEmail, widget.groupId),
+      GroupRoleCacheService.clearGroupRole(userEmail, widget.groupId),
+    ]);
+  }
+
+  String _friendlyLeaveErrorMessage(GroupApiException exception) {
+    if (_isGroupApiNetworkError(exception)) {
+      return 'Keine Verbindung';
+    }
+
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Gruppe nicht gefunden / kein Zugriff';
+      default:
+        return exception.message;
+    }
+  }
+
+  bool _isGroupApiNetworkError(GroupApiException exception) {
+    final message = exception.message.trim().toLowerCase();
+    return exception.statusCode == null &&
+        (message == 'netzwerkfehler' || message.contains('timeout'));
   }
 
   @override

@@ -55,6 +55,14 @@ class OfflineGroupActivityService {
     }
   }
 
+  static Future<void> clearGroupActivities(
+    String userEmail,
+    int groupId,
+  ) async {
+    final box = await _openBox();
+    await box.delete(_groupActivitiesKey(userEmail, groupId));
+  }
+
   static Future<GroupActivitiesResponse> refreshGroupActivities(
     String userEmail,
     int groupId, {

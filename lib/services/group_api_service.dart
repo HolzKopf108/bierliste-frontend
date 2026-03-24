@@ -247,6 +247,26 @@ class GroupApiService {
     }
   }
 
+  Future<void> removeMember(int groupId, int targetUserId) async {
+    try {
+      final response = await HttpService.authorizedRequest(
+        '$_groupsBase/$groupId/members/$targetUserId',
+        'DELETE',
+      );
+      _ensureSuccess(response, 'Mitglied konnte nicht entfernt werden');
+    } on UnauthorizedException {
+      rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('removeMember Token-Refresh-Fehler: ${e.message}');
+      throw GroupApiException(e.message);
+    } on GroupApiException {
+      rethrow;
+    } catch (e) {
+      debugPrint('removeMember Fehler: $e');
+      throw GroupApiException('Netzwerkfehler');
+    }
+  }
+
   Future<Group> joinGroupByInviteToken(String token) async {
     try {
       final response = await HttpService.authorizedRequest(

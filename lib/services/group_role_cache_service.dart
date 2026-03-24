@@ -50,6 +50,11 @@ class GroupRoleCacheService {
     return role;
   }
 
+  static Future<void> clearGroupRole(String userEmail, int groupId) async {
+    final box = await _openBox();
+    await box.delete(_groupRoleKey(userEmail, groupId));
+  }
+
   static Future<void> clearForUser(String userEmail) async {
     final box = await _openBox();
     final matchingKeys = box.keys

@@ -76,6 +76,11 @@ class OfflineGroupUsersService {
     }
   }
 
+  static Future<void> clearGroupMembers(String userEmail, int groupId) async {
+    final box = await _openBox();
+    await box.delete(_groupMembersKey(userEmail, groupId));
+  }
+
   static Future<List<GroupMember>> refreshGroupMembers(
     String userEmail,
     int groupId, {
@@ -158,6 +163,67 @@ class OfflineGroupUsersService {
       operation,
       fallbackErrorMessage: 'Bierlistenwart konnte nicht herabgestuft werden',
     );
+  }
+
+  static Future<OfflineGroupUsersActionResult> removeMember(
+    String userEmail,
+    int groupId,
+    GroupMember member,
+  ) async {
+    var members = await _currentMembers(userEmail, groupId);
+
+    if (!await ConnectivityService.isOnline()) {
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        errorMessage: 'Keine Verbindung',
+      );
+    }
+
+    try {
+      await GroupApiService().removeMember(groupId, member.userId);
+      try {
+        await GroupRoleCacheService.refreshGroupRole(userEmail, groupId);
+      } catch (_) {}
+
+      try {
+        members = await refreshGroupMembers(userEmail, groupId);
+      } catch (_) {
+        members = _removeMemberFromList(members, member.userId);
+        await saveGroupMembers(userEmail, groupId, members);
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } on GroupApiException catch (e) {
+      if (_isPermanentFailure(e.statusCode)) {
+        try {
+          members = await refreshGroupMembers(userEmail, groupId);
+        } catch (_) {
+          members = (await getGroupMembers(userEmail, groupId)) ?? members;
+        }
+        try {
+          await GroupRoleCacheService.refreshGroupRole(userEmail, groupId);
+        } catch (_) {}
+      }
+
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        shouldReloadUi: _shouldReloadUi(e.statusCode),
+        errorMessage: _friendlyRemoveMemberError(e),
+      );
+    } catch (_) {
+      return OfflineGroupUsersActionResult(
+        members: members,
+        hasPendingSync: false,
+        errorMessage: 'Mitglied konnte nicht entfernt werden',
+      );
+    }
   }
 
   static Future<OfflineGroupUsersActionResult> settleMemberMoney(
@@ -1049,6 +1115,13 @@ class OfflineGroupUsersService {
     }).toList();
   }
 
+  static List<GroupMember> _removeMemberFromList(
+    List<GroupMember> members,
+    int targetUserId,
+  ) {
+    return members.where((member) => member.userId != targetUserId).toList();
+  }
+
   static List<GroupMember> _applySettlementDeltaToMembers(
     List<GroupMember> members,
     int targetUserId,
@@ -1255,6 +1328,39 @@ class OfflineGroupUsersService {
     }
   }
 
+  static String _friendlyRemoveMemberError(GroupApiException exception) {
+    final message = exception.message.trim();
+    if (_isNetworkError(exception)) {
+      return 'Keine Verbindung';
+    }
+
+    if (_isLastWartRemovalBlocked(exception.statusCode, message)) {
+      return 'Der letzte Bierlistenwart kann nicht entfernt werden';
+    }
+
+    if (_isGroupUnavailableActionError(exception.statusCode, message)) {
+      return 'Gruppe nicht verfügbar oder kein Zugriff';
+    }
+
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        if (_isMemberUnavailableError(message)) {
+          return 'Mitglied wurde nicht gefunden';
+        }
+        return 'Gruppe nicht verfügbar oder kein Zugriff';
+      case 409:
+        return message.isNotEmpty
+            ? message
+            : 'Mitglied kann gerade nicht entfernt werden';
+      default:
+        return message.isNotEmpty
+            ? message
+            : 'Mitglied konnte nicht entfernt werden';
+    }
+  }
+
   static String _friendlySettlementError(
     GroupSettlementApiException exception, {
     required String operationType,
@@ -1306,6 +1412,13 @@ class OfflineGroupUsersService {
         normalizedMessage.contains('mindestens ein');
   }
 
+  static bool _isLastWartRemovalBlocked(int? statusCode, String message) {
+    final normalizedMessage = message.toLowerCase();
+    return _isLastWartDemotionBlocked(statusCode, message) ||
+        normalizedMessage.contains('entfernt') ||
+        normalizedMessage.contains('removed');
+  }
+
   static bool _isGroupUnavailableActionError(int? statusCode, String message) {
     if (statusCode != 403 && statusCode != 404) {
       return false;
@@ -1328,6 +1441,12 @@ class OfflineGroupUsersService {
 
   static bool _shouldReloadUi(int? statusCode) {
     return statusCode == 403 || statusCode == 404;
+  }
+
+  static bool _isNetworkError(GroupApiException exception) {
+    final message = exception.message.trim().toLowerCase();
+    return exception.statusCode == null &&
+        (message == 'netzwerkfehler' || message.contains('timeout'));
   }
 
   static int _normalizeStrichCount(int value) {

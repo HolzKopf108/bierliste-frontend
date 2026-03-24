@@ -26,6 +26,7 @@ enum _MemberAction {
   settleStriche,
   promoteToWart,
   demoteToMember,
+  removeMember,
 }
 
 class GroupUsersPage extends StatefulWidget {
@@ -273,6 +274,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       case _MemberAction.demoteToMember:
         await _handleRoleAction(member, action);
         return;
+      case _MemberAction.removeMember:
+        await _handleRemoveMemberAction(member);
+        return;
       case _MemberAction.settleMoney:
         await _handleMoneySettlementAction(member);
         return;
@@ -329,6 +333,22 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     final syncProvider = context.read<SyncProvider>();
     if (userEmail == null) {
       Toast.show(context, 'Berechtigung konnte nicht geprüft werden');
+      return;
+    }
+
+    if (action == _MemberAction.demoteToMember &&
+        _isOwnMember(member) &&
+        _wartCount() <= 1) {
+      await _showInfoDialog(
+        title: 'Letzter Bierlistenwart',
+        message:
+            'Du musst erst jemand anderen zum Bierlistenwart ernennen, bevor du dich selbst herabstufen kannst.',
+      );
+      return;
+    }
+
+    final confirmed = await _showRoleActionConfirmation(member, action);
+    if (!mounted || !confirmed) {
       return;
     }
 
@@ -506,6 +526,56 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       pendingMessage: 'Strichstand gespeichert und wird synchronisiert',
       fallbackErrorMessage: 'Striche konnten nicht abgezogen werden',
     );
+  }
+
+  Future<void> _handleRemoveMemberAction(GroupMember member) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final confirmed = await _showConfirmationDialog(
+      title: 'Mitglied entfernen',
+      message:
+          'Wirklich ${member.username} aus der Gruppe entfernen?\n'
+          'Dieser Vorgang kann nicht rückgängig gemacht werden.',
+    );
+    if (!mounted || !confirmed) {
+      return;
+    }
+
+    await _handleMemberActionExecution(
+      member,
+      execute: (userEmail) => OfflineGroupUsersService.removeMember(
+        userEmail,
+        widget.groupId,
+        member,
+      ),
+      successMessage: '${member.username} wurde entfernt',
+      pendingMessage: '${member.username} wurde entfernt',
+      fallbackErrorMessage: 'Mitglied konnte nicht entfernt werden',
+    );
+  }
+
+  Future<bool> _showRoleActionConfirmation(
+    GroupMember member,
+    _MemberAction action,
+  ) {
+    switch (action) {
+      case _MemberAction.promoteToWart:
+        return _showConfirmationDialog(
+          title: 'Zum Bierlistenwart machen',
+          message: 'Wirklich ${member.username} zum Bierlistenwart machen?',
+        );
+      case _MemberAction.demoteToMember:
+        return _showConfirmationDialog(
+          title: 'Als Bierlistenwart entfernen',
+          message: _isOwnMember(member)
+              ? 'Wirklich dich selbst als Bierlistenwart entfernen?'
+              : 'Wirklich ${member.username} als Bierlistenwart entfernen?',
+        );
+      default:
+        return Future.value(false);
+    }
   }
 
   Future<void> _handleMemberActionExecution(
@@ -843,6 +913,27 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         false;
   }
 
+  Future<void> _showInfoDialog({
+    required String title,
+    required String message,
+  }) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(title),
+          content: Text(message),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _reloadAfterActionFailure(
     String userEmail,
     GroupRoleProvider groupRoleProvider,
@@ -865,6 +956,12 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
     return currentUsername.toLowerCase() ==
         member.username.trim().toLowerCase();
+  }
+
+  int _wartCount() {
+    return _members
+        .where((member) => member.role == GroupMemberRole.wart)
+        .length;
   }
 
   double? _parseMoneyAmount(String rawValue) {
@@ -922,7 +1019,12 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     final theme = Theme.of(context);
     final entries = <PopupMenuEntry<_MemberAction>>[];
     final canBookForOthers = _canBookForOtherMembers(ownRole);
-    final canManageMembers = ownRole == GroupMemberRole.wart;
+    final isOwnMember = _isOwnMember(member);
+    final canManageSettlements = ownRole == GroupMemberRole.wart;
+    final canManageRole =
+        ownRole == GroupMemberRole.wart &&
+        (!isOwnMember || member.role == GroupMemberRole.wart);
+    final canRemoveMember = ownRole == GroupMemberRole.wart && !isOwnMember;
 
     if (canBookForOthers) {
       entries.add(
@@ -936,7 +1038,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       );
     }
 
-    if (canManageMembers) {
+    if (canManageSettlements) {
       if (entries.isNotEmpty) {
         entries.add(const PopupMenuDivider(height: 10));
       }
@@ -957,6 +1059,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
           theme: theme,
         ),
       );
+    }
+
+    if (canManageRole) {
       entries.add(const PopupMenuDivider(height: 10));
       entries.add(
         _buildMenuItem(
@@ -967,9 +1072,22 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
               ? Icons.person_remove_alt_1_outlined
               : Icons.verified_user_outlined,
           label: member.role == GroupMemberRole.wart
-              ? 'Bierlistenwart entfernen'
+              ? 'Als Bierlistenwart entfernen'
               : 'Zum Bierlistenwart machen',
           theme: theme,
+        ),
+      );
+    }
+
+    if (canRemoveMember) {
+      entries.add(const PopupMenuDivider(height: 10));
+      entries.add(
+        _buildMenuItem(
+          action: _MemberAction.removeMember,
+          icon: Icons.person_remove_outlined,
+          label: 'Mitglied entfernen',
+          theme: theme,
+          destructive: true,
         ),
       );
     }
@@ -983,13 +1101,18 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     required String label,
     required ThemeData theme,
     bool emphasized = false,
+    bool destructive = false,
   }) {
     final colorScheme = theme.colorScheme;
     final foregroundColor = emphasized
         ? colorScheme.onPrimaryContainer
+        : destructive
+        ? colorScheme.error
         : colorScheme.onSurface;
     final iconColor = emphasized
         ? colorScheme.onPrimaryContainer
+        : destructive
+        ? colorScheme.error
         : colorScheme.onSurfaceVariant;
 
     return PopupMenuItem<_MemberAction>(

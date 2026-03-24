@@ -40,6 +40,16 @@ class OfflineStrichService {
     );
   }
 
+  static Future<void> clearGroupData(String userEmail, int groupId) async {
+    final box = await _openBox();
+    final matchingKeys = box.keys.where((key) {
+      return key.toString().startsWith(
+        'counter_cache_${userEmail}_${groupId}_',
+      );
+    }).toList();
+    await box.deleteAll(matchingKeys);
+  }
+
   static Future<void> addPendingOwnCounterIncrement(
     String userEmail,
     int groupId,

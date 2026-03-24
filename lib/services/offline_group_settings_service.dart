@@ -64,6 +64,11 @@ class OfflineGroupSettingsService {
     }
   }
 
+  static Future<void> clearGroupSettings(String userEmail, int groupId) async {
+    final box = await _openBox();
+    await box.delete(_groupSettingsKey(userEmail, groupId));
+  }
+
   static Future<GroupSettings> refreshGroupSettings(
     String userEmail,
     int groupId,

@@ -59,6 +59,17 @@ class PendingSyncQueueService {
     await saveOperations(userEmail, filtered.toList());
   }
 
+  static Future<void> removeGroupOperations(
+    String userEmail,
+    int groupId,
+  ) async {
+    final operations = await getOperations(userEmail);
+    final filtered = operations.where(
+      (operation) => operation.groupId != groupId,
+    );
+    await saveOperations(userEmail, filtered.toList());
+  }
+
   static Future<bool> hasPendingOperations(String userEmail) async {
     final operations = await getOperations(userEmail);
     return operations.isNotEmpty;

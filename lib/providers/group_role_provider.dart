@@ -51,6 +51,16 @@ class GroupRoleProvider with ChangeNotifier {
     return loadRole(userEmail, groupId, forceRefresh: true);
   }
 
+  void removeGroup(int groupId) {
+    final removedRole = _rolesByGroupId.remove(groupId);
+    final removedLoading = _isLoadingByGroupId.remove(groupId);
+    if (removedRole == null && removedLoading == null) {
+      return;
+    }
+
+    notifyListeners();
+  }
+
   void clear() {
     if (_rolesByGroupId.isEmpty && _isLoadingByGroupId.isEmpty) {
       return;

@@ -12,6 +12,8 @@ class GroupActivityFormatter {
     switch (activity.type) {
       case ActivityType.strichIncremented:
         return _formatStrichIncremented(activity);
+      case ActivityType.strichIncrementUndone:
+        return _formatStrichIncrementUndone(activity);
       case ActivityType.stricheDeducted:
         return _formatStricheDeducted(activity);
       case ActivityType.moneyDeducted:
@@ -65,6 +67,19 @@ class GroupActivityFormatter {
 
     final target = _targetName(activity);
     return '$actor hat $target $amount $strichLabel gemacht.';
+  }
+
+  static String _formatStrichIncrementUndone(GroupActivity activity) {
+    final actor = _actorName(activity);
+    final amount = _readInt(activity.meta['amount']) ?? 0;
+    final strichLabel = _strichLabel(amount);
+
+    if (_isSelfAction(activity)) {
+      return '$actor hat $amount $strichLabel rückgängig gemacht.';
+    }
+
+    final target = _targetName(activity);
+    return '$actor hat bei $target $amount $strichLabel rückgängig gemacht.';
   }
 
   static String _formatStricheDeducted(GroupActivity activity) {

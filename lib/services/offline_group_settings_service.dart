@@ -155,10 +155,8 @@ class OfflineGroupSettingsService {
     String userEmail, {
     int? groupId,
   }) async {
-    final allOperations = await PendingSyncQueueService.getOperations(
-      userEmail,
-    );
-    final syncableOperations = allOperations.where((operation) {
+    var operations = await PendingSyncQueueService.getOperations(userEmail);
+    final syncableOperations = operations.where((operation) {
       if (operation.domain != PendingSyncOperation.domainGroupSettings) {
         return false;
       }
@@ -179,9 +177,12 @@ class OfflineGroupSettingsService {
     }
 
     var allSuccessful = true;
-    var operations = List<PendingSyncOperation>.from(allOperations);
 
     for (final operation in syncableOperations) {
+      if (!operations.any((entry) => entry.id == operation.id)) {
+        continue;
+      }
+
       try {
         final updatedSettings = await GroupSettingsApiService()
             .updateGroupSettings(
@@ -189,39 +190,43 @@ class OfflineGroupSettingsService {
               _settingsFromOperation(operation),
             );
         await saveGroupSettings(userEmail, operation.groupId, updatedSettings);
-        operations.removeWhere((entry) => entry.id == operation.id);
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          operation.id,
+        ]);
+        operations = await PendingSyncQueueService.getOperations(userEmail);
       } on UnauthorizedException {
         rethrow;
       } on GroupSettingsApiException catch (e) {
         allSuccessful = false;
         if (_isPermanentFailure(e.statusCode)) {
-          operations.removeWhere((entry) => entry.id == operation.id);
-          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          await PendingSyncQueueService.removeOperations(userEmail, [
+            operation.id,
+          ]);
+          operations = await PendingSyncQueueService.getOperations(userEmail);
           try {
             await refreshGroupSettings(userEmail, operation.groupId);
           } catch (_) {}
         } else {
-          operations = _replaceOperation(
-            operations,
+          await PendingSyncQueueService.replaceOperation(
+            userEmail,
             PendingSyncQueueService.scheduleRetry(operation),
           );
-          await PendingSyncQueueService.saveOperations(userEmail, operations);
+          operations = await PendingSyncQueueService.getOperations(userEmail);
         }
       } on TimeoutException {
         allSuccessful = false;
-        operations = _replaceOperation(
-          operations,
+        await PendingSyncQueueService.replaceOperation(
+          userEmail,
           PendingSyncQueueService.scheduleRetry(operation),
         );
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
+        operations = await PendingSyncQueueService.getOperations(userEmail);
       } catch (_) {
         allSuccessful = false;
-        operations = _replaceOperation(
-          operations,
+        await PendingSyncQueueService.replaceOperation(
+          userEmail,
           PendingSyncQueueService.scheduleRetry(operation),
         );
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
+        operations = await PendingSyncQueueService.getOperations(userEmail);
       }
     }
 
@@ -254,10 +259,9 @@ class OfflineGroupSettingsService {
         retryCount: 0,
         clearNextAttemptAt: true,
       );
-      final updatedOperations = _replaceOperation(operations, updatedOperation);
-      await PendingSyncQueueService.saveOperations(
+      await PendingSyncQueueService.replaceOperation(
         userEmail,
-        updatedOperations,
+        updatedOperation,
       );
       return updatedOperation;
     }
@@ -310,19 +314,6 @@ class OfflineGroupSettingsService {
     }
 
     return _settingsFromOperation(pendingUpdate);
-  }
-
-  static List<PendingSyncOperation> _replaceOperation(
-    List<PendingSyncOperation> operations,
-    PendingSyncOperation updatedOperation,
-  ) {
-    return operations.map((operation) {
-      if (operation.id != updatedOperation.id) {
-        return operation;
-      }
-
-      return updatedOperation;
-    }).toList();
   }
 
   static bool _isPermanentFailure(int? statusCode) {

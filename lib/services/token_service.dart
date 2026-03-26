@@ -6,13 +6,20 @@ class TokenService {
   static const _refreshTokenKey = 'refreshToken';
   static const _userEmailKey = 'userEmail';
   static final _storage = FlutterSecureStorage();
+  static Future<String?> Function()? testGetUserEmail;
 
   static Future<String?> getAccessToken() async =>
       await _storage.read(key: _accessTokenKey);
   static Future<String?> getRefreshToken() async =>
       await _storage.read(key: _refreshTokenKey);
-  static Future<String?> getUserEmail() async =>
-      await _storage.read(key: _userEmailKey);
+  static Future<String?> getUserEmail() async {
+    final getUserEmailOverride = testGetUserEmail;
+    if (getUserEmailOverride != null) {
+      return getUserEmailOverride();
+    }
+
+    return _storage.read(key: _userEmailKey);
+  }
 
   static Future<void> saveTokens(
     String accessToken,

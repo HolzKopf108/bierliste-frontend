@@ -274,6 +274,58 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return strichCount == 1 ? 'Strich' : 'Striche';
   }
 
+  TextSpan _buildBookedToastMessageSpan(
+    String username,
+    int amount, {
+    required bool pending,
+  }) {
+    final prefix = amount == 1 ? 'Strich für ' : '$amount Striche für ';
+    final suffix = amount == 1
+        ? pending
+              ? ' gebucht und wird synchronisiert'
+              : ' gebucht'
+        : pending
+        ? ' gebucht und werden synchronisiert'
+        : ' gebucht';
+
+    return TextSpan(
+      children: [
+        TextSpan(text: prefix),
+        TextSpan(
+          text: username,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        TextSpan(text: suffix),
+      ],
+    );
+  }
+
+  TextSpan _buildUndoBookedToastMessageSpan(
+    String username,
+    int amount, {
+    required bool pending,
+  }) {
+    final prefix = amount == 1 ? 'Strich für ' : '$amount Striche für ';
+    final suffix = amount == 1
+        ? pending
+              ? ' wird rückgängig gemacht und synchronisiert'
+              : ' rückgängig gemacht'
+        : pending
+        ? ' werden rückgängig gemacht und synchronisiert'
+        : ' rückgängig gemacht';
+
+    return TextSpan(
+      children: [
+        TextSpan(text: prefix),
+        TextSpan(
+          text: username,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        TextSpan(text: suffix),
+      ],
+    );
+  }
+
   Future<void> _handlePopupAction(
     GroupMember member,
     _MemberAction action,
@@ -336,8 +388,125 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       pendingMessage: pendingMessage,
       fallbackErrorMessage: 'Striche konnten nicht gespeichert werden',
       toastActionLabel: 'Rückgängig',
-      onToastActionTap: () {},
+      successMessageSpan: _buildBookedToastMessageSpan(
+        member.username,
+        amount,
+        pending: false,
+      ),
+      pendingMessageSpan: _buildBookedToastMessageSpan(
+        member.username,
+        amount,
+        pending: true,
+      ),
+      createToastActionTap: (result) {
+        final localOperationId = result.localOperationId;
+        if (localOperationId == null) {
+          return null;
+        }
+
+        return () =>
+            _handleUndoBookStricheAction(member, localOperationId, amount);
+      },
     );
+  }
+
+  Future<void> _handleUndoBookStricheAction(
+    GroupMember member,
+    String localOperationId,
+    int amount,
+  ) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final userEmail = context.read<AuthProvider>().userEmail;
+    final groupRoleProvider = context.read<GroupRoleProvider>();
+    final syncProvider = context.read<SyncProvider>();
+    if (userEmail == null) {
+      Toast.show(
+        context,
+        'Berechtigung konnte nicht geprüft werden',
+        type: ToastType.warning,
+      );
+      return;
+    }
+
+    setState(() {
+      _updatingMemberUserId = member.userId;
+    });
+
+    try {
+      final result = await OfflineGroupUsersService.undoMemberCounterIncrement(
+        userEmail,
+        widget.groupId,
+        member,
+        localOperationId,
+        amount,
+        affectsCurrentUser: _isOwnMember(member),
+        isSyncing: syncProvider.isSyncing,
+      );
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _members = result.members;
+        _loadErrorMessage = null;
+      });
+
+      if (result.errorMessage != null) {
+        Toast.show(context, result.errorMessage!, type: ToastType.warning);
+        if (result.shouldReloadUi) {
+          unawaited(_reloadAfterActionFailure(userEmail, groupRoleProvider));
+        }
+      } else {
+        final isPending = result.hasPendingSync;
+        final message = amount == 1
+            ? isPending
+                  ? 'Strich für ${member.username} wird rückgängig gemacht und synchronisiert'
+                  : 'Strich für ${member.username} rückgängig gemacht'
+            : isPending
+            ? '$amount Striche für ${member.username} werden rückgängig gemacht und synchronisiert'
+            : '$amount Striche für ${member.username} rückgängig gemacht';
+        Toast.show(
+          context,
+          message,
+          type: isPending ? ToastType.info : ToastType.success,
+          messageSpan: _buildUndoBookedToastMessageSpan(
+            member.username,
+            amount,
+            pending: isPending,
+          ),
+        );
+      }
+
+      if (result.hasPendingSync) {
+        unawaited(syncProvider.markPendingSync());
+      } else {
+        unawaited(syncProvider.refreshPendingSyncStatus());
+      }
+    } on UnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
+      unawaited(_reloadAfterActionFailure(userEmail, groupRoleProvider));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(
+        context,
+        'Striche konnten nicht rückgängig gemacht werden',
+        type: ToastType.warning,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingMemberUserId = null;
+        });
+      }
+    }
   }
 
   bool _isQuickBookCoolingDown(int userId) {
@@ -709,8 +878,11 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     required String successMessage,
     required String pendingMessage,
     required String fallbackErrorMessage,
+    InlineSpan? successMessageSpan,
+    InlineSpan? pendingMessageSpan,
     String? toastActionLabel,
-    VoidCallback? onToastActionTap,
+    VoidCallback? Function(OfflineGroupUsersActionResult result)?
+    createToastActionTap,
   }) async {
     final userEmail = context.read<AuthProvider>().userEmail;
     final groupRoleProvider = context.read<GroupRoleProvider>();
@@ -746,8 +918,11 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
           context,
           result.hasPendingSync ? pendingMessage : successMessage,
           type: result.hasPendingSync ? ToastType.info : ToastType.success,
+          messageSpan: result.hasPendingSync
+              ? pendingMessageSpan
+              : successMessageSpan,
           actionLabel: toastActionLabel,
-          onActionTap: onToastActionTap,
+          onActionTap: createToastActionTap?.call(result),
         );
       }
 

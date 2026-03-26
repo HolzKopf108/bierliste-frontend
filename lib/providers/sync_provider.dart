@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/connectivity_service.dart';
 import '../services/pending_sync_service.dart';
+import '../services/sync_debug_service.dart';
 import '../services/token_service.dart';
 
 class SyncProvider with ChangeNotifier {
@@ -60,12 +61,37 @@ class SyncProvider with ChangeNotifier {
 
     await forceCheck();
 
+    final userEmail = await TokenService.getUserEmail();
+    final hasReadyOperations =
+        userEmail != null &&
+        await PendingSyncService.hasReadyOperations(userEmail);
+    SyncDebugService.log(
+      'SyncProvider',
+      'requestSync',
+      details: {
+        'refreshPendingStatus': refreshPendingStatus,
+        'hasPendingSync': _hasPendingSync,
+        'actualOnline': _actualOnline,
+        'isSyncing': _isSyncing,
+        'hasReadyOperations': hasReadyOperations,
+      },
+    );
+
     if (!_hasPendingSync) {
       return true;
     }
 
     if (!_actualOnline) {
       return false;
+    }
+
+    if (!hasReadyOperations) {
+      SyncDebugService.log(
+        'SyncProvider',
+        'sync skipped because only delayed retries remain',
+        details: {'userEmail': userEmail},
+      );
+      return true;
     }
 
     return _performSync();
@@ -93,6 +119,23 @@ class SyncProvider with ChangeNotifier {
     await _checkOnlineStatus();
 
     if (_hasPendingSync && _actualOnline) {
+      final userEmail = await TokenService.getUserEmail();
+      final hasReadyOperations =
+          userEmail != null &&
+          await PendingSyncService.hasReadyOperations(userEmail);
+      SyncDebugService.log(
+        'SyncProvider',
+        'monitor cycle evaluated pending sync state',
+        details: {
+          'hasPendingSync': _hasPendingSync,
+          'actualOnline': _actualOnline,
+          'hasReadyOperations': hasReadyOperations,
+        },
+      );
+      if (!hasReadyOperations) {
+        return;
+      }
+
       await _performSync();
     }
   }
@@ -104,6 +147,7 @@ class SyncProvider with ChangeNotifier {
 
   Future<bool> _performSync() async {
     if (_syncInFlight != null) {
+      SyncDebugService.log('SyncProvider', 'reusing in-flight sync future');
       return _syncInFlight!;
     }
 
@@ -121,8 +165,25 @@ class SyncProvider with ChangeNotifier {
     _setIsSyncing(true);
 
     try {
+      SyncDebugService.log(
+        'SyncProvider',
+        'sync execution started',
+        details: {
+          'hasPendingSync': _hasPendingSync,
+          'actualOnline': _actualOnline,
+        },
+      );
       final success = await syncHandler();
       await refreshPendingSyncStatus();
+      SyncDebugService.log(
+        'SyncProvider',
+        'sync execution finished',
+        details: {
+          'success': success,
+          'hasPendingSync': _hasPendingSync,
+          'actualOnline': _actualOnline,
+        },
+      );
       if (success && _hasPendingSync && _actualOnline) {
         unawaited(requestSync(refreshPendingStatus: false));
       }
@@ -130,6 +191,14 @@ class SyncProvider with ChangeNotifier {
       return success;
     } catch (_) {
       await refreshPendingSyncStatus();
+      SyncDebugService.log(
+        'SyncProvider',
+        'sync execution failed with exception',
+        details: {
+          'hasPendingSync': _hasPendingSync,
+          'actualOnline': _actualOnline,
+        },
+      );
       completer.complete(false);
       return false;
     } finally {

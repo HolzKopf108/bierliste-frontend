@@ -6,6 +6,9 @@ class PendingSyncOperation {
   static const String incrementOwnCounter = 'incrementOwnCounter';
   static const String incrementGroupMemberCounter =
       'incrementGroupMemberCounter';
+  static const String undoOwnCounterIncrement = 'undoOwnCounterIncrement';
+  static const String undoGroupMemberCounterIncrement =
+      'undoGroupMemberCounterIncrement';
   static const String promoteGroupMember = 'promoteGroupMember';
   static const String demoteGroupMember = 'demoteGroupMember';
   static const String settleGroupMemberMoney = 'settleGroupMemberMoney';

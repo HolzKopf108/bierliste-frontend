@@ -70,6 +70,31 @@ void main() {
     );
   });
 
+  test('formatter handles undo activities', () {
+    final activity = GroupActivity(
+      id: 4,
+      timestamp: DateTime(2026, 3, 21, 9, 20),
+      type: ActivityType.strichIncrementUndone,
+      actorUserId: 5,
+      actorName: 'Max',
+      targetUserId: 8,
+      targetName: 'Mia',
+      meta: const {
+        'amount': 2,
+        'mode': 'OTHER',
+        'incrementRequestId': 123,
+        'originalActivityId': 77,
+      },
+    );
+
+    expect(
+      GroupActivityFormatter.formatDescription(activity),
+      'Max hat bei Mia 2 Striche rückgängig gemacht.',
+    );
+    expect(activity.meta['incrementRequestId'], 123);
+    expect(activity.meta['originalActivityId'], 77);
+  });
+
   test('formatter renders settings changes with meta values', () {
     final activity = GroupActivity(
       id: 3,

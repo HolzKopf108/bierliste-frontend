@@ -1,5 +1,6 @@
 enum ActivityType {
   strichIncremented('STRICH_INCREMENTED'),
+  strichIncrementUndone('STRICH_INCREMENT_UNDONE'),
   stricheDeducted('STRICHE_DEDUCTED'),
   moneyDeducted('MONEY_DEDUCTED'),
   userJoinedGroup('USER_JOINED_GROUP'),
@@ -21,6 +22,8 @@ enum ActivityType {
     switch (normalizedValue) {
       case 'STRICH_INCREMENTED':
         return ActivityType.strichIncremented;
+      case 'STRICH_INCREMENT_UNDONE':
+        return ActivityType.strichIncrementUndone;
       case 'STRICHE_DEDUCTED':
         return ActivityType.stricheDeducted;
       case 'MONEY_DEDUCTED':

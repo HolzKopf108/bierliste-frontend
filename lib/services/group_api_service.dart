@@ -17,6 +17,8 @@ class GroupApiException implements Exception {
 }
 
 class GroupApiService {
+  static Future<List<GroupMember>> Function(int groupId)? testFetchGroupMembers;
+
   String get _groupsBase =>
       '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}/groups';
   String get _invitesBase =>
@@ -109,6 +111,11 @@ class GroupApiService {
   }
 
   Future<List<GroupMember>> fetchGroupMembers(int groupId) async {
+    final fetchOverride = testFetchGroupMembers;
+    if (fetchOverride != null) {
+      return fetchOverride(groupId);
+    }
+
     try {
       final response = await HttpService.authorizedRequest(
         '$_groupsBase/$groupId/members',

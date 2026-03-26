@@ -13,6 +13,7 @@ class Toast {
     ToastType type = ToastType.error,
     String? actionLabel,
     VoidCallback? onActionTap,
+    InlineSpan? messageSpan,
   }) {
     _removeCurrentToast();
 
@@ -27,6 +28,7 @@ class Toast {
           type: type,
           actionLabel: actionLabel,
           onActionTap: onActionTap,
+          messageSpan: messageSpan,
         ),
       ),
     );
@@ -51,12 +53,14 @@ class _ToastWidget extends StatelessWidget {
   final ToastType type;
   final String? actionLabel;
   final VoidCallback? onActionTap;
+  final InlineSpan? messageSpan;
 
   const _ToastWidget({
     required this.message,
     required this.type,
     this.actionLabel,
     this.onActionTap,
+    this.messageSpan,
   });
 
   ({Color backgroundColor, IconData icon}) _config(BuildContext context) {
@@ -103,14 +107,24 @@ class _ToastWidget extends StatelessWidget {
               Icon(config.icon, color: Colors.white),
               const SizedBox(width: 8),
               Expanded(
-                child: Text(
-                  message,
-                  style: const TextStyle(color: Colors.white),
-                ),
+                child: messageSpan != null
+                    ? RichText(
+                        text: TextSpan(
+                          style: const TextStyle(color: Colors.white),
+                          children: [messageSpan!],
+                        ),
+                      )
+                    : Text(
+                        message,
+                        style: const TextStyle(color: Colors.white),
+                      ),
               ),
               if (actionLabel != null)
                 TextButton(
-                  onPressed: onActionTap,
+                  onPressed: () {
+                    Toast._removeCurrentToast();
+                    onActionTap?.call();
+                  },
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.white,
                     disabledForegroundColor: Colors.white,

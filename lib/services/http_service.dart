@@ -80,8 +80,8 @@ class HttpService {
     Map<String, String>? headers,
     Object? body,
   }) async {
-    headers ??= {};
-    headers['Content-Type'] = 'application/json';
+    headers = Map<String, String>.from(headers ?? const <String, String>{});
+    _applyJsonContentType(headers, body);
 
     final uri = Uri.parse(url);
     late http.Response response;
@@ -93,13 +93,13 @@ class HttpService {
         response = await http.post(
           uri,
           headers: headers,
-          body: jsonEncode(body),
+          body: body == null ? null : jsonEncode(body),
         );
       } else if (method == 'PUT') {
         response = await http.put(
           uri,
           headers: headers,
-          body: jsonEncode(body),
+          body: body == null ? null : jsonEncode(body),
         );
       } else {
         throw UnsupportedError('HTTP-Methode $method nicht unterstützt');
@@ -120,8 +120,8 @@ class HttpService {
   }) async {
     final accessToken = await TokenService.getAccessToken();
 
-    headers ??= {};
-    headers['Content-Type'] = 'application/json';
+    headers = Map<String, String>.from(headers ?? const <String, String>{});
+    _applyJsonContentType(headers, body);
     if (accessToken != null) {
       headers['Authorization'] = 'Bearer $accessToken';
     }
@@ -136,13 +136,13 @@ class HttpService {
         response = await http.post(
           uri,
           headers: headers,
-          body: jsonEncode(body),
+          body: body == null ? null : jsonEncode(body),
         );
       } else if (method == 'PUT') {
         response = await http.put(
           uri,
           headers: headers,
-          body: jsonEncode(body),
+          body: body == null ? null : jsonEncode(body),
         );
       } else if (method == 'DELETE') {
         response = await http.delete(uri, headers: headers);
@@ -296,5 +296,14 @@ class HttpService {
       'Token-Refresh fehlgeschlagen (${response.statusCode})',
       statusCode: response.statusCode,
     );
+  }
+
+  static void _applyJsonContentType(Map<String, String> headers, Object? body) {
+    if (body == null) {
+      headers.remove('Content-Type');
+      return;
+    }
+
+    headers['Content-Type'] = 'application/json';
   }
 }

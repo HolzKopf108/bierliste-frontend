@@ -244,7 +244,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     int amount,
     SyncProvider syncProvider,
   ) async {
-    await OfflineStrichService.addPendingOwnCounterIncrement(
+    final operation = await OfflineStrichService.addPendingOwnCounterIncrement(
       userEmail,
       widget.groupId,
       amount,
@@ -255,7 +255,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
       _strichCount += amount;
       _loadErrorMessage = null;
     });
-    _showSavedToast(amount);
+    _showSavedToast(amount, operation.id);
     unawaited(syncProvider.markPendingSync());
     return _StrichSubmitResult.savedPending;
   }
@@ -268,7 +268,62 @@ class _GroupHomePageState extends State<GroupHomePage> {
     }
   }
 
-  void _showSavedToast(int amount) {
+  Future<void> _handleUndoSavedIncrement(
+    String localOperationId,
+    int amount,
+  ) async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+    final syncProvider = context.read<SyncProvider>();
+    if (userEmail == null) {
+      Toast.show(
+        context,
+        'Berechtigung konnte nicht geprüft werden',
+        type: ToastType.warning,
+      );
+      return;
+    }
+
+    final result = await OfflineStrichService.undoOwnCounterIncrement(
+      userEmail,
+      widget.groupId,
+      localOperationId,
+      amount,
+      isSyncing: syncProvider.isSyncing,
+    );
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _strichCount = result.count;
+      _loadErrorMessage = null;
+    });
+
+    if (result.errorMessage != null) {
+      Toast.show(context, result.errorMessage!, type: ToastType.warning);
+    } else {
+      final message = amount == 1
+          ? result.hasPendingSync
+                ? 'Rückgängig gespeichert und wird synchronisiert'
+                : 'Strich rückgängig gemacht'
+          : result.hasPendingSync
+          ? '$amount Striche werden rückgängig gemacht und synchronisiert'
+          : '$amount Striche rückgängig gemacht';
+      Toast.show(
+        context,
+        message,
+        type: result.hasPendingSync ? ToastType.info : ToastType.success,
+      );
+    }
+
+    if (result.hasPendingSync) {
+      unawaited(syncProvider.markPendingSync());
+    } else {
+      unawaited(syncProvider.refreshPendingSyncStatus());
+    }
+  }
+
+  void _showSavedToast(int amount, String localOperationId) {
     final message = switch (amount) {
       1 => 'Strich gespeichert',
       _ => '$amount Striche gespeichert',
@@ -279,7 +334,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
       message,
       type: ToastType.success,
       actionLabel: 'Rückgängig',
-      onActionTap: () {},
+      onActionTap: () => _handleUndoSavedIncrement(localOperationId, amount),
     );
   }
 

@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:bierliste/config/app_config.dart';
+import 'package:bierliste/models/counter_increment_result.dart';
+import 'package:bierliste/models/counter_undo_result.dart';
 import 'package:bierliste/models/group_counter.dart';
 import 'package:bierliste/models/increment_request.dart';
 import 'package:flutter/material.dart';
@@ -17,10 +19,30 @@ class GroupCounterApiException implements Exception {
 }
 
 class GroupCounterApiService {
+  static Future<GroupCounter> Function(int groupId)? testFetchMyGroupCounter;
+  static Future<CounterIncrementResult> Function(int groupId, int amount)?
+  testIncrementMyGroupCounter;
+  static Future<CounterIncrementResult> Function(
+    int groupId,
+    int targetUserId,
+    int amount,
+  )?
+  testIncrementGroupMemberCounter;
+  static Future<CounterUndoResult> Function(
+    int groupId,
+    int incrementRequestId,
+  )?
+  testUndoCounterIncrement;
+
   String get _groupsBase =>
       '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}/groups';
 
   Future<GroupCounter> fetchMyGroupCounter(int groupId) async {
+    final fetchOverride = testFetchMyGroupCounter;
+    if (fetchOverride != null) {
+      return fetchOverride(groupId);
+    }
+
     try {
       final response = await HttpService.authorizedRequest(
         '$_groupsBase/$groupId/me/counter',
@@ -47,7 +69,15 @@ class GroupCounterApiService {
     }
   }
 
-  Future<GroupCounter> incrementMyGroupCounter(int groupId, int amount) async {
+  Future<CounterIncrementResult> incrementMyGroupCounter(
+    int groupId,
+    int amount,
+  ) async {
+    final incrementOverride = testIncrementMyGroupCounter;
+    if (incrementOverride != null) {
+      return incrementOverride(groupId, amount);
+    }
+
     if (amount < 1) {
       throw GroupCounterApiException('Ungültiger Inkrement-Wert');
     }
@@ -68,7 +98,7 @@ class GroupCounterApiService {
         throw GroupCounterApiException('Ungültige Serverantwort');
       }
 
-      return GroupCounter.fromJson(data);
+      return CounterIncrementResult.fromJson(data);
     } on UnauthorizedException {
       rethrow;
     } on TokenRefreshException catch (e) {
@@ -82,11 +112,16 @@ class GroupCounterApiService {
     }
   }
 
-  Future<GroupCounter> incrementGroupMemberCounter(
+  Future<CounterIncrementResult> incrementGroupMemberCounter(
     int groupId,
     int targetUserId,
     int amount,
   ) async {
+    final incrementOverride = testIncrementGroupMemberCounter;
+    if (incrementOverride != null) {
+      return incrementOverride(groupId, targetUserId, amount);
+    }
+
     if (amount < 1) {
       throw GroupCounterApiException('Ungültiger Inkrement-Wert');
     }
@@ -107,7 +142,7 @@ class GroupCounterApiService {
         throw GroupCounterApiException('Ungültige Serverantwort');
       }
 
-      return GroupCounter.fromJson(data);
+      return CounterIncrementResult.fromJson(data);
     } on UnauthorizedException {
       rethrow;
     } on TokenRefreshException catch (e) {
@@ -119,6 +154,48 @@ class GroupCounterApiService {
       rethrow;
     } catch (e) {
       debugPrint('incrementGroupMemberCounter Fehler: $e');
+      throw GroupCounterApiException('Netzwerkfehler');
+    }
+  }
+
+  Future<CounterUndoResult> undoCounterIncrement(
+    int groupId,
+    int incrementRequestId,
+  ) async {
+    final undoOverride = testUndoCounterIncrement;
+    if (undoOverride != null) {
+      return undoOverride(groupId, incrementRequestId);
+    }
+
+    try {
+      final response = await HttpService.authorizedRequest(
+        '$_groupsBase/$groupId/counter/increments/$incrementRequestId/undo',
+        'POST',
+      );
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        debugPrint(
+          'undoCounterIncrement HTTP-Fehler: '
+          'groupId=$groupId incrementRequestId=$incrementRequestId '
+          'status=${response.statusCode} body=${response.body}',
+        );
+      }
+      _ensureSuccess(response, 'Strich konnte nicht rückgängig gemacht werden');
+
+      final data = _decode(response.body);
+      if (data is! Map<String, dynamic>) {
+        throw GroupCounterApiException('Ungültige Serverantwort');
+      }
+
+      return CounterUndoResult.fromJson(data);
+    } on UnauthorizedException {
+      rethrow;
+    } on TokenRefreshException catch (e) {
+      debugPrint('undoCounterIncrement Token-Refresh-Fehler: ${e.message}');
+      throw GroupCounterApiException(e.message, statusCode: e.statusCode);
+    } on GroupCounterApiException {
+      rethrow;
+    } catch (e) {
+      debugPrint('undoCounterIncrement Fehler: $e');
       throw GroupCounterApiException('Netzwerkfehler');
     }
   }

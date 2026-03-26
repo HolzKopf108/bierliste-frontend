@@ -1,7 +1,11 @@
+import 'package:bierliste/models/confirmed_counter_increment.dart';
+import 'package:bierliste/models/offline_counter_action_result.dart';
 import 'package:bierliste/models/pending_sync_operation.dart';
+import 'package:bierliste/services/connectivity_service.dart';
 import 'package:bierliste/services/group_counter_api_service.dart';
 import 'package:bierliste/services/http_service.dart';
 import 'package:bierliste/services/pending_sync_queue_service.dart';
+import 'package:bierliste/services/sync_debug_service.dart';
 import 'package:hive/hive.dart';
 
 class OfflineStrichService {
@@ -40,29 +44,295 @@ class OfflineStrichService {
     );
   }
 
+  static Future<void> saveConfirmedIncrement(
+    String userEmail,
+    ConfirmedCounterIncrement increment,
+  ) async {
+    final box = await _openBox();
+    await box.put(
+      _confirmedIncrementKey(
+        userEmail,
+        increment.groupId,
+        increment.localOperationId,
+      ),
+      increment.toJson(),
+    );
+    SyncDebugService.log(
+      'OfflineStrichService',
+      'confirmed increment saved',
+      details: {
+        'userEmail': userEmail,
+        'groupId': increment.groupId,
+        'localOperationId': increment.localOperationId,
+        'incrementRequestId': increment.incrementRequestId,
+        'undoExpiresAt': increment.undoExpiresAt.toIso8601String(),
+        'targetUserId': increment.targetUserId,
+      },
+    );
+  }
+
+  static Future<ConfirmedCounterIncrement?> getConfirmedIncrement(
+    String userEmail,
+    String localOperationId, {
+    required int groupId,
+  }) async {
+    final box = await _openBox();
+    final rawValue = box.get(
+      _confirmedIncrementKey(userEmail, groupId, localOperationId),
+    );
+    if (rawValue is! Map) {
+      SyncDebugService.log(
+        'OfflineStrichService',
+        'confirmed increment missing',
+        details: {
+          'userEmail': userEmail,
+          'groupId': groupId,
+          'localOperationId': localOperationId,
+        },
+      );
+      return null;
+    }
+
+    try {
+      final increment = ConfirmedCounterIncrement.fromJson(
+        Map<String, dynamic>.from(rawValue),
+      );
+      SyncDebugService.log(
+        'OfflineStrichService',
+        'confirmed increment loaded',
+        details: {
+          'userEmail': userEmail,
+          'groupId': groupId,
+          'localOperationId': localOperationId,
+          'incrementRequestId': increment.incrementRequestId,
+        },
+      );
+      return increment;
+    } catch (_) {
+      await box.delete(
+        _confirmedIncrementKey(userEmail, groupId, localOperationId),
+      );
+      SyncDebugService.log(
+        'OfflineStrichService',
+        'invalid confirmed increment removed',
+        details: {
+          'userEmail': userEmail,
+          'groupId': groupId,
+          'localOperationId': localOperationId,
+        },
+      );
+      return null;
+    }
+  }
+
+  static Future<void> removeConfirmedIncrement(
+    String userEmail,
+    int groupId,
+    String localOperationId,
+  ) async {
+    final box = await _openBox();
+    await box.delete(
+      _confirmedIncrementKey(userEmail, groupId, localOperationId),
+    );
+    SyncDebugService.log(
+      'OfflineStrichService',
+      'confirmed increment removed',
+      details: {
+        'userEmail': userEmail,
+        'groupId': groupId,
+        'localOperationId': localOperationId,
+      },
+    );
+  }
+
   static Future<void> clearGroupData(String userEmail, int groupId) async {
     final box = await _openBox();
     final matchingKeys = box.keys.where((key) {
-      return key.toString().startsWith(
-        'counter_cache_${userEmail}_${groupId}_',
-      );
+      final normalizedKey = key.toString();
+      return normalizedKey.startsWith(
+            'counter_cache_${userEmail}_${groupId}_',
+          ) ||
+          normalizedKey.startsWith(
+            'confirmed_increment_${userEmail}_${groupId}_',
+          );
     }).toList();
     await box.deleteAll(matchingKeys);
   }
 
-  static Future<void> addPendingOwnCounterIncrement(
+  static Future<PendingSyncOperation> addPendingOwnCounterIncrement(
     String userEmail,
     int groupId,
     int amount,
   ) async {
-    await PendingSyncQueueService.addOperation(
-      PendingSyncQueueService.createOperation(
+    final operation = PendingSyncQueueService.createOperation(
+      userEmail: userEmail,
+      domain: PendingSyncOperation.domainCounter,
+      operationType: PendingSyncOperation.incrementOwnCounter,
+      groupId: groupId,
+      payload: {'amount': amount},
+    );
+    await PendingSyncQueueService.addOperation(operation);
+    return operation;
+  }
+
+  static Future<OfflineCounterActionResult> undoOwnCounterIncrement(
+    String userEmail,
+    int groupId,
+    String localOperationId,
+    int amount, {
+    required bool isSyncing,
+  }) async {
+    final allOperations = await PendingSyncQueueService.getOperations(
+      userEmail,
+    );
+    final confirmed = await getConfirmedIncrement(
+      userEmail,
+      localOperationId,
+      groupId: groupId,
+    );
+    final existingUndoOperation = _findUndoOwnOperation(
+      allOperations,
+      localOperationId,
+    );
+
+    if (existingUndoOperation != null) {
+      return OfflineCounterActionResult(
+        count: await _effectiveOwnCounterCount(userEmail, groupId),
+        hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+          userEmail,
+        ),
+      );
+    }
+
+    if (confirmed != null) {
+      final undoExpiresAt = confirmed.undoExpiresAt;
+      if (_isUndoExpired(undoExpiresAt)) {
+        await removeConfirmedIncrement(userEmail, groupId, localOperationId);
+        return OfflineCounterActionResult(
+          count: await _effectiveOwnCounterCount(userEmail, groupId),
+          hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+            userEmail,
+          ),
+          errorMessage: 'Undo-Zeitfenster abgelaufen',
+        );
+      }
+
+      final undoOperation = PendingSyncQueueService.createOperation(
         userEmail: userEmail,
         domain: PendingSyncOperation.domainCounter,
-        operationType: PendingSyncOperation.incrementOwnCounter,
+        operationType: PendingSyncOperation.undoOwnCounterIncrement,
         groupId: groupId,
-        payload: {'amount': amount},
+        payload: {
+          'localOperationId': localOperationId,
+          'amount': amount,
+          'localStrichDelta': -amount,
+          'incrementRequestId': confirmed.incrementRequestId,
+          'undoExpiresAt': undoExpiresAt.toUtc().toIso8601String(),
+        },
+      );
+      await PendingSyncQueueService.addOperation(undoOperation);
+
+      final isOnline = await ConnectivityService.isOnline();
+      if (!isOnline || isSyncing) {
+        return OfflineCounterActionResult(
+          count: await _effectiveOwnCounterCount(userEmail, groupId),
+          hasPendingSync: true,
+        );
+      }
+
+      try {
+        final response = await GroupCounterApiService().undoCounterIncrement(
+          groupId,
+          confirmed.incrementRequestId,
+        );
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          undoOperation.id,
+        ]);
+        await removeConfirmedIncrement(userEmail, groupId, localOperationId);
+        await saveLastOnlineCounter(userEmail, groupId, response.count);
+        return OfflineCounterActionResult(
+          count: await _effectiveOwnCounterCount(userEmail, groupId),
+          hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+            userEmail,
+          ),
+        );
+      } on UnauthorizedException {
+        rethrow;
+      } on GroupCounterApiException catch (e) {
+        if (_isPermanentFailure(e.statusCode)) {
+          await PendingSyncQueueService.removeOperations(userEmail, [
+            undoOperation.id,
+          ]);
+          await removeConfirmedIncrement(userEmail, groupId, localOperationId);
+          return OfflineCounterActionResult(
+            count: await _effectiveOwnCounterCount(userEmail, groupId),
+            hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+              userEmail,
+            ),
+            errorMessage: _friendlyUndoError(e),
+          );
+        }
+
+        return OfflineCounterActionResult(
+          count: await _effectiveOwnCounterCount(userEmail, groupId),
+          hasPendingSync: true,
+        );
+      } catch (_) {
+        return OfflineCounterActionResult(
+          count: await _effectiveOwnCounterCount(userEmail, groupId),
+          hasPendingSync: true,
+        );
+      }
+    }
+
+    final originalOperation = allOperations
+        .cast<PendingSyncOperation?>()
+        .firstWhere((operation) {
+          return operation != null &&
+              operation.id == localOperationId &&
+              operation.domain == PendingSyncOperation.domainCounter &&
+              operation.operationType ==
+                  PendingSyncOperation.incrementOwnCounter &&
+              operation.groupId == groupId;
+        }, orElse: () => null);
+
+    if (originalOperation != null && !isSyncing) {
+      await PendingSyncQueueService.removeOperations(userEmail, [
+        originalOperation.id,
+      ]);
+      return OfflineCounterActionResult(
+        count: await _effectiveOwnCounterCount(userEmail, groupId),
+        hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+          userEmail,
+        ),
+      );
+    }
+
+    if (originalOperation != null) {
+      final undoOperation = PendingSyncQueueService.createOperation(
+        userEmail: userEmail,
+        domain: PendingSyncOperation.domainCounter,
+        operationType: PendingSyncOperation.undoOwnCounterIncrement,
+        groupId: groupId,
+        payload: {
+          'localOperationId': localOperationId,
+          'amount': amount,
+          'localStrichDelta': -amount,
+        },
+      );
+      await PendingSyncQueueService.addOperation(undoOperation);
+      return OfflineCounterActionResult(
+        count: await _effectiveOwnCounterCount(userEmail, groupId),
+        hasPendingSync: true,
+      );
+    }
+
+    return OfflineCounterActionResult(
+      count: await _effectiveOwnCounterCount(userEmail, groupId),
+      hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+        userEmail,
       ),
+      errorMessage: 'Strich kann gerade nicht rückgängig gemacht werden',
     );
   }
 
@@ -72,7 +342,10 @@ class OfflineStrichService {
     final operations = await PendingSyncQueueService.getOperations(userEmail);
     return operations.where((operation) {
       return operation.domain == PendingSyncOperation.domainCounter &&
-          operation.operationType == PendingSyncOperation.incrementOwnCounter;
+          (operation.operationType ==
+                  PendingSyncOperation.incrementOwnCounter ||
+              operation.operationType ==
+                  PendingSyncOperation.undoOwnCounterIncrement);
     }).toList();
   }
 
@@ -80,14 +353,20 @@ class OfflineStrichService {
     String userEmail, {
     int? groupId,
   }) async {
-    final allOperations = await PendingSyncQueueService.getOperations(
+    var operations = await PendingSyncQueueService.getOperations(userEmail);
+    operations = await _removeLocallyUndoneOwnIncrements(
       userEmail,
+      operations,
+      groupId: groupId,
     );
-    final syncableOperations = allOperations.where((operation) {
+
+    final syncableOperations = operations.where((operation) {
       if (operation.domain != PendingSyncOperation.domainCounter) {
         return false;
       }
-      if (operation.operationType != PendingSyncOperation.incrementOwnCounter) {
+      if (operation.operationType != PendingSyncOperation.incrementOwnCounter &&
+          operation.operationType !=
+              PendingSyncOperation.undoOwnCounterIncrement) {
         return false;
       }
       if (!operation.isReadyForSync) {
@@ -103,72 +382,71 @@ class OfflineStrichService {
       return true;
     }
 
-    final groupedOperations = <int, List<PendingSyncOperation>>{};
-    for (final operation in syncableOperations) {
-      groupedOperations.putIfAbsent(operation.groupId, () => []).add(operation);
-    }
-
     var allSuccessful = true;
-    var operations = List<PendingSyncOperation>.from(allOperations);
 
-    for (final entry in groupedOperations.entries) {
-      final operationsForGroup = entry.value;
-      final currentGroupId = entry.key;
-      final totalAmount = operationsForGroup.fold<int>(
-        0,
-        (sum, operation) => sum + _amount(operation),
-      );
+    for (final operation in syncableOperations) {
+      if (!operations.any((entry) => entry.id == operation.id)) {
+        continue;
+      }
 
-      try {
-        final counter = await GroupCounterApiService().incrementMyGroupCounter(
-          currentGroupId,
-          totalAmount,
-        );
-        await saveLastOnlineCounter(userEmail, currentGroupId, counter.count);
-        final operationIds = operationsForGroup
-            .map((operation) => operation.id)
-            .toSet();
-        operations = operations.where((operation) {
-          return !operationIds.contains(operation.id);
-        }).toList();
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
-      } on UnauthorizedException {
-        rethrow;
-      } on GroupCounterApiException catch (e) {
-        allSuccessful = false;
-        if (_isPermanentFailure(e.statusCode)) {
-          final operationIds = operationsForGroup
-              .map((operation) => operation.id)
-              .toSet();
-          operations = operations.where((operation) {
-            return !operationIds.contains(operation.id);
-          }).toList();
-        } else {
-          final updatedIds = operationsForGroup
-              .map((operation) => operation.id)
-              .toSet();
-          operations = operations.map((operation) {
-            if (!updatedIds.contains(operation.id)) {
-              return operation;
-            }
-
-            return PendingSyncQueueService.scheduleRetry(operation);
-          }).toList();
-        }
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
-      } catch (_) {
-        allSuccessful = false;
-        final updatedIds = operationsForGroup
-            .map((operation) => operation.id)
-            .toSet();
-        operations = operations.map((operation) {
-          if (!updatedIds.contains(operation.id)) {
-            return operation;
+      if (operation.operationType == PendingSyncOperation.incrementOwnCounter) {
+        try {
+          final counter = await GroupCounterApiService()
+              .incrementMyGroupCounter(operation.groupId, _amount(operation));
+          await saveLastOnlineCounter(
+            userEmail,
+            operation.groupId,
+            counter.count,
+          );
+          await saveConfirmedIncrement(
+            userEmail,
+            ConfirmedCounterIncrement(
+              localOperationId: operation.id,
+              groupId: operation.groupId,
+              amount: _amount(operation),
+              incrementRequestId: counter.incrementRequestId,
+              undoExpiresAt: counter.undoExpiresAt,
+              affectsCurrentUser: true,
+            ),
+          );
+          await PendingSyncQueueService.removeOperations(userEmail, [
+            operation.id,
+          ]);
+          operations = await PendingSyncQueueService.getOperations(userEmail);
+        } on UnauthorizedException {
+          rethrow;
+        } on GroupCounterApiException catch (e) {
+          allSuccessful = false;
+          if (_isPermanentFailure(e.statusCode)) {
+            await PendingSyncQueueService.removeOperations(userEmail, [
+              operation.id,
+            ]);
+          } else {
+            await PendingSyncQueueService.replaceOperation(
+              userEmail,
+              PendingSyncQueueService.scheduleRetry(operation),
+            );
           }
+          operations = await PendingSyncQueueService.getOperations(userEmail);
+        } catch (_) {
+          allSuccessful = false;
+          await PendingSyncQueueService.replaceOperation(
+            userEmail,
+            PendingSyncQueueService.scheduleRetry(operation),
+          );
+          operations = await PendingSyncQueueService.getOperations(userEmail);
+        }
+        continue;
+      }
 
-          return PendingSyncQueueService.scheduleRetry(operation);
-        }).toList();
-        await PendingSyncQueueService.saveOperations(userEmail, operations);
+      final syncResult = await _syncUndoOwnCounterOperation(
+        userEmail,
+        operation,
+        operations,
+      );
+      operations = syncResult.operations;
+      if (!syncResult.successful) {
+        allSuccessful = false;
       }
     }
 
@@ -181,7 +459,10 @@ class OfflineStrichService {
     );
     final filtered = allOperations.where((operation) {
       return operation.domain != PendingSyncOperation.domainCounter ||
-          operation.operationType != PendingSyncOperation.incrementOwnCounter;
+          (operation.operationType !=
+                  PendingSyncOperation.incrementOwnCounter &&
+              operation.operationType !=
+                  PendingSyncOperation.undoOwnCounterIncrement);
     }).toList();
     await PendingSyncQueueService.saveOperations(userEmail, filtered);
   }
@@ -207,8 +488,10 @@ class OfflineStrichService {
 
           if (operation.domain == PendingSyncOperation.domainCounter) {
             return targetUserId == null &&
-                operation.operationType ==
-                    PendingSyncOperation.incrementOwnCounter;
+                (operation.operationType ==
+                        PendingSyncOperation.incrementOwnCounter ||
+                    operation.operationType ==
+                        PendingSyncOperation.undoOwnCounterIncrement);
           }
 
           if (operation.domain != PendingSyncOperation.domainGroupUsers ||
@@ -230,12 +513,259 @@ class OfflineStrichService {
     return list.isNotEmpty;
   }
 
+  static Future<int> _effectiveOwnCounterCount(
+    String userEmail,
+    int groupId,
+  ) async {
+    final lastOnlineCount = await getLastOnlineCounter(userEmail, groupId);
+    final pendingCount = await getPendingSum(userEmail, groupId);
+    return lastOnlineCount + pendingCount;
+  }
+
+  static Future<List<PendingSyncOperation>> _removeLocallyUndoneOwnIncrements(
+    String userEmail,
+    List<PendingSyncOperation> operations, {
+    int? groupId,
+  }) async {
+    final undoOperationsByLocalId = <String, List<PendingSyncOperation>>{};
+    for (final operation in operations) {
+      if (operation.domain != PendingSyncOperation.domainCounter ||
+          operation.operationType !=
+              PendingSyncOperation.undoOwnCounterIncrement) {
+        continue;
+      }
+
+      if (groupId != null && operation.groupId != groupId) {
+        continue;
+      }
+
+      final localOperationId = _localOperationId(operation);
+      if (localOperationId == null || localOperationId.isEmpty) {
+        continue;
+      }
+
+      undoOperationsByLocalId
+          .putIfAbsent(localOperationId, () => [])
+          .add(operation);
+    }
+
+    if (undoOperationsByLocalId.isEmpty) {
+      return operations;
+    }
+
+    final idsToRemove = <String>{};
+    for (final operation in operations) {
+      if (operation.domain != PendingSyncOperation.domainCounter ||
+          operation.operationType != PendingSyncOperation.incrementOwnCounter) {
+        continue;
+      }
+      if (groupId != null && operation.groupId != groupId) {
+        continue;
+      }
+
+      final matchingUndoOperations = undoOperationsByLocalId[operation.id];
+      if (matchingUndoOperations == null || matchingUndoOperations.isEmpty) {
+        continue;
+      }
+
+      final confirmed = await getConfirmedIncrement(
+        userEmail,
+        operation.id,
+        groupId: operation.groupId,
+      );
+      idsToRemove.add(operation.id);
+      if (confirmed == null) {
+        idsToRemove.addAll(matchingUndoOperations.map((entry) => entry.id));
+      }
+    }
+
+    if (idsToRemove.isEmpty) {
+      return operations;
+    }
+
+    await PendingSyncQueueService.removeOperations(userEmail, idsToRemove);
+    return PendingSyncQueueService.getOperations(userEmail);
+  }
+
+  static Future<_UndoSyncResult> _syncUndoOwnCounterOperation(
+    String userEmail,
+    PendingSyncOperation operation,
+    List<PendingSyncOperation> operations,
+  ) async {
+    final localOperationId = _localOperationId(operation);
+    if (localOperationId == null || localOperationId.isEmpty) {
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      return _UndoSyncResult(
+        await PendingSyncQueueService.getOperations(userEmail),
+        true,
+      );
+    }
+
+    final confirmed = await getConfirmedIncrement(
+      userEmail,
+      localOperationId,
+      groupId: operation.groupId,
+    );
+    if (confirmed == null) {
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      return _UndoSyncResult(
+        await PendingSyncQueueService.getOperations(userEmail),
+        true,
+      );
+    }
+
+    final undoExpiresAt = _undoExpiresAt(operation, confirmed);
+    if (_isUndoExpired(undoExpiresAt)) {
+      await removeConfirmedIncrement(
+        userEmail,
+        operation.groupId,
+        localOperationId,
+      );
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      return _UndoSyncResult(
+        await PendingSyncQueueService.getOperations(userEmail),
+        false,
+      );
+    }
+
+    try {
+      final response = await GroupCounterApiService().undoCounterIncrement(
+        operation.groupId,
+        confirmed.incrementRequestId,
+      );
+      await saveLastOnlineCounter(userEmail, operation.groupId, response.count);
+      await removeConfirmedIncrement(
+        userEmail,
+        operation.groupId,
+        localOperationId,
+      );
+      await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+      return _UndoSyncResult(
+        await PendingSyncQueueService.getOperations(userEmail),
+        true,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } on GroupCounterApiException catch (e) {
+      if (_isPermanentFailure(e.statusCode)) {
+        await removeConfirmedIncrement(
+          userEmail,
+          operation.groupId,
+          localOperationId,
+        );
+        await PendingSyncQueueService.removeOperations(userEmail, [
+          operation.id,
+        ]);
+        return _UndoSyncResult(
+          await PendingSyncQueueService.getOperations(userEmail),
+          false,
+        );
+      }
+
+      await PendingSyncQueueService.replaceOperation(
+        userEmail,
+        PendingSyncQueueService.scheduleUndoRetry(operation, undoExpiresAt),
+      );
+      return _UndoSyncResult(
+        await PendingSyncQueueService.getOperations(userEmail),
+        false,
+      );
+    } catch (_) {
+      await PendingSyncQueueService.replaceOperation(
+        userEmail,
+        PendingSyncQueueService.scheduleUndoRetry(operation, undoExpiresAt),
+      );
+      return _UndoSyncResult(
+        await PendingSyncQueueService.getOperations(userEmail),
+        false,
+      );
+    }
+  }
+
+  static PendingSyncOperation? _findUndoOwnOperation(
+    List<PendingSyncOperation> operations,
+    String localOperationId,
+  ) {
+    for (final operation in operations) {
+      if (operation.domain != PendingSyncOperation.domainCounter ||
+          operation.operationType !=
+              PendingSyncOperation.undoOwnCounterIncrement) {
+        continue;
+      }
+
+      if (_localOperationId(operation) == localOperationId) {
+        return operation;
+      }
+    }
+
+    return null;
+  }
+
+  static String? _localOperationId(PendingSyncOperation operation) {
+    final rawValue = operation.payload['localOperationId'];
+    if (rawValue == null) {
+      return null;
+    }
+
+    final normalizedValue = rawValue.toString().trim();
+    if (normalizedValue.isEmpty) {
+      return null;
+    }
+
+    return normalizedValue;
+  }
+
+  static DateTime _undoExpiresAt(
+    PendingSyncOperation operation,
+    ConfirmedCounterIncrement confirmed,
+  ) {
+    final rawValue = operation.payload['undoExpiresAt'];
+    if (rawValue is String && rawValue.trim().isNotEmpty) {
+      return DateTime.parse(rawValue).toUtc();
+    }
+    return confirmed.undoExpiresAt.toUtc();
+  }
+
+  static String _friendlyUndoError(GroupCounterApiException exception) {
+    final normalizedMessage = exception.message.trim().toLowerCase();
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Strich-Request nicht gefunden';
+      case 409:
+        if (normalizedMessage.contains('zeitfenster') ||
+            normalizedMessage.contains('abgelaufen')) {
+          return 'Undo-Zeitfenster abgelaufen';
+        }
+        if (normalizedMessage.contains('rückgängig') ||
+            normalizedMessage.contains('rueckgaengig')) {
+          return 'Strich-Request kann nicht mehr rückgängig gemacht werden';
+        }
+        return exception.message.trim().isNotEmpty
+            ? exception.message.trim()
+            : 'Strich konnte nicht rückgängig gemacht werden';
+      default:
+        return exception.message.trim().isNotEmpty
+            ? exception.message.trim()
+            : 'Strich konnte nicht rückgängig gemacht werden';
+    }
+  }
+
   static String _lastOnlineCounterKey(
     String userEmail,
     int groupId,
     int? targetUserId,
   ) {
     return 'counter_cache_${userEmail}_${groupId}_${targetUserId ?? 'me'}';
+  }
+
+  static String _confirmedIncrementKey(
+    String userEmail,
+    int groupId,
+    String localOperationId,
+  ) {
+    return 'confirmed_increment_${userEmail}_${groupId}_$localOperationId';
   }
 
   static int _amount(PendingSyncOperation operation) {
@@ -252,9 +782,15 @@ class OfflineStrichService {
   }
 
   static int _pendingCountDelta(PendingSyncOperation operation) {
-    if (operation.domain == PendingSyncOperation.domainCounter &&
-        operation.operationType == PendingSyncOperation.incrementOwnCounter) {
-      return _amount(operation);
+    if (operation.domain == PendingSyncOperation.domainCounter) {
+      if (operation.operationType == PendingSyncOperation.incrementOwnCounter) {
+        return _amount(operation);
+      }
+
+      if (operation.operationType ==
+          PendingSyncOperation.undoOwnCounterIncrement) {
+        return _localStrichDelta(operation);
+      }
     }
 
     return _localStrichDelta(operation);
@@ -262,7 +798,9 @@ class OfflineStrichService {
 
   static bool _isMemberStrichOperation(PendingSyncOperation operation) {
     if (operation.operationType ==
-        PendingSyncOperation.incrementGroupMemberCounter) {
+            PendingSyncOperation.incrementGroupMemberCounter ||
+        operation.operationType ==
+            PendingSyncOperation.undoGroupMemberCounterIncrement) {
       return true;
     }
 
@@ -298,7 +836,18 @@ class OfflineStrichService {
     return int.tryParse(value.toString()) ?? 0;
   }
 
+  static bool _isUndoExpired(DateTime undoExpiresAt) {
+    return !DateTime.now().toUtc().isBefore(undoExpiresAt);
+  }
+
   static bool _isPermanentFailure(int? statusCode) {
     return statusCode != null && statusCode >= 400 && statusCode < 500;
   }
+}
+
+class _UndoSyncResult {
+  final List<PendingSyncOperation> operations;
+  final bool successful;
+
+  const _UndoSyncResult(this.operations, this.successful);
 }

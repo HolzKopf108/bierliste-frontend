@@ -273,6 +273,38 @@ void main() {
     },
   );
 
+  test('offline member settlement preserves negative balances', () async {
+    ConnectivityService.testIsOnline = () async => false;
+    const member = GroupMember(
+      userId: targetUserId,
+      username: 'Mia',
+      strichCount: 1,
+      role: GroupMemberRole.member,
+    );
+
+    await OfflineGroupUsersService.saveGroupMembers(userEmail, groupId, [
+      member,
+    ]);
+
+    final result = await OfflineGroupUsersService.settleMemberStriche(
+      userEmail,
+      groupId,
+      member,
+      3,
+      affectsCurrentUser: false,
+    );
+
+    expect(result.hasPendingSync, isTrue);
+    expect(result.members.single.strichCount, -2);
+
+    final cachedMembers = await OfflineGroupUsersService.getGroupMembers(
+      userEmail,
+      groupId,
+    );
+    expect(cachedMembers, isNotNull);
+    expect(cachedMembers!.single.strichCount, -2);
+  });
+
   test(
     'member-counter sync keeps undo queued during in-flight increment and syncs it afterwards',
     () async {

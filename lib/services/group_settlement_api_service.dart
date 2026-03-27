@@ -37,7 +37,7 @@ class GroupSettlementApiService {
       endpoint: 'money',
       amount: amount,
       timeout: timeout,
-      fallbackMessage: 'Geld konnte nicht abgezogen werden',
+      fallbackMessage: 'Geld konnte nicht eingezahlt werden',
     );
   }
 
@@ -57,7 +57,7 @@ class GroupSettlementApiService {
       endpoint: 'striche',
       amount: amount,
       timeout: timeout,
-      fallbackMessage: 'Striche konnten nicht abgezogen werden',
+      fallbackMessage: 'Striche konnten nicht verrechnet werden',
     );
   }
 

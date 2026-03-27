@@ -95,6 +95,38 @@ void main() {
     expect(activity.meta['originalActivityId'], 77);
   });
 
+  test('formatter uses saldo wording for settlements', () {
+    final moneyActivity = GroupActivity(
+      id: 5,
+      timestamp: DateTime(2026, 3, 21, 9, 25),
+      type: ActivityType.moneyDeducted,
+      actorUserId: 5,
+      actorName: 'Max',
+      targetUserId: 8,
+      targetName: 'Mia',
+      meta: const {'amountMoney': 2.5},
+    );
+    final stricheActivity = GroupActivity(
+      id: 6,
+      timestamp: DateTime(2026, 3, 21, 9, 30),
+      type: ActivityType.stricheDeducted,
+      actorUserId: 5,
+      actorName: 'Max',
+      targetUserId: 5,
+      targetName: 'Max',
+      meta: const {'amountStriche': 3},
+    );
+
+    expect(
+      GroupActivityFormatter.formatDescription(moneyActivity),
+      'Max hat bei Mia 2,50 € eingezahlt.',
+    );
+    expect(
+      GroupActivityFormatter.formatDescription(stricheActivity),
+      'Max hat 3 Striche verrechnet.',
+    );
+  });
+
   test('formatter renders settings changes with meta values', () {
     final activity = GroupActivity(
       id: 3,
@@ -111,6 +143,25 @@ void main() {
     expect(
       GroupActivityFormatter.formatDescription(activity),
       'Lena hat Einstellungen geändert: Name: Alt -> Neu, Preis pro Strich: 1,50 € -> 2,00 €.',
+    );
+  });
+
+  test('formatter uses updated label for money settlement setting', () {
+    final activity = GroupActivity(
+      id: 7,
+      timestamp: DateTime(2026, 3, 21, 9, 35),
+      type: ActivityType.groupSettingsChanged,
+      actorName: 'Lena',
+      meta: const {
+        'changedFields': ['ALLOW_ARBITRARY_MONEY_SETTLEMENTS'],
+        'oldSettings': {'allowArbitraryMoneySettlements': false},
+        'newSettings': {'allowArbitraryMoneySettlements': true},
+      },
+    );
+
+    expect(
+      GroupActivityFormatter.formatDescription(activity),
+      'Lena hat Einstellungen geändert: Beliebige Einzahlungsbeträge erlaubt: Nein -> Ja.',
     );
   });
 }

@@ -88,11 +88,11 @@ class GroupActivityFormatter {
     final strichLabel = _strichLabel(amount);
 
     if (_isSelfAction(activity)) {
-      return '$actor hat sich $amount $strichLabel abgezogen.';
+      return '$actor hat $amount $strichLabel verrechnet.';
     }
 
     final target = _targetName(activity);
-    return '$actor hat bei $target $amount $strichLabel abgezogen.';
+    return '$actor hat bei $target $amount $strichLabel verrechnet.';
   }
 
   static String _formatMoneyDeducted(GroupActivity activity) {
@@ -103,11 +103,11 @@ class GroupActivityFormatter {
         : _formatMoney(amount);
 
     if (_isSelfAction(activity)) {
-      return '$actor hat sich $formattedAmount abgezogen.';
+      return '$actor hat $formattedAmount eingezahlt.';
     }
 
     final target = _targetName(activity);
-    return '$actor hat bei $target $formattedAmount abgezogen.';
+    return '$actor hat bei $target $formattedAmount eingezahlt.';
   }
 
   static String _formatRoleGranted(GroupActivity activity) {
@@ -177,7 +177,7 @@ class GroupActivityFormatter {
         );
       case 'ALLOW_ARBITRARY_MONEY_SETTLEMENTS':
         return _formatChangedValue(
-          'Beliebige Geldbeträge erlaubt',
+          'Beliebige Einzahlungsbeträge erlaubt',
           _formatBool(oldSettings?['allowArbitraryMoneySettlements']),
           _formatBool(newSettings?['allowArbitraryMoneySettlements']),
         );

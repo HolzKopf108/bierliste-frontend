@@ -274,6 +274,26 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     return strichCount == 1 ? 'Strich' : 'Striche';
   }
 
+  String _saldoStatusLabel(int strichCount) {
+    if (strichCount > 0) {
+      return 'Schulden';
+    }
+    if (strichCount < 0) {
+      return 'Guthaben';
+    }
+    return 'Ausgeglichen';
+  }
+
+  Color _saldoColor(ThemeData theme, int strichCount) {
+    if (strichCount > 0) {
+      return theme.colorScheme.error;
+    }
+    if (strichCount < 0) {
+      return const Color(0xFF2E7D32);
+    }
+    return theme.colorScheme.onSurface;
+  }
+
   TextSpan _buildBookedToastMessageSpan(
     String username,
     int amount, {
@@ -751,18 +771,21 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     final ignoredAmountText = ignoredAmount > 0.0001
         ? '\nRestbetrag ${_formatMoney(ignoredAmount)} € wird ignoriert.'
         : '';
+    final settlementText = resultingReduction > 0
+        ? 'Dabei werden $resultingReduction ${_strichLabel(resultingReduction)} verrechnet.'
+        : 'Es wird noch kein voller Strich verrechnet.';
     final successMessage = resultingReduction > 0
-        ? 'Geldabzug gespeichert'
+        ? 'Einzahlung gespeichert'
         : 'Kein voller Strich, daher keine Änderung';
     final pendingMessage = resultingReduction > 0
-        ? 'Geldabzug gespeichert und wird synchronisiert'
+        ? 'Einzahlung gespeichert und wird synchronisiert'
         : 'Kein voller Strich, daher keine Änderung; Anfrage wird synchronisiert';
 
     final confirmed = await _showConfirmationDialog(
-      title: 'Geld abziehen',
+      title: 'Geld einzahlen',
       message:
-          'Wirklich ${_formatMoney(amount)} € bei ${member.username} abziehen?\n'
-          'Dabei werden $resultingReduction ${_strichLabel(resultingReduction)} reduziert.'
+          'Wirklich ${_formatMoney(amount)} € für ${member.username} einzahlen?\n'
+          '$settlementText'
           '$ignoredAmountText',
     );
     if (!mounted || !confirmed) {
@@ -783,7 +806,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       ),
       successMessage: successMessage,
       pendingMessage: pendingMessage,
-      fallbackErrorMessage: 'Geld konnte nicht abgezogen werden',
+      fallbackErrorMessage: 'Geld konnte nicht eingezahlt werden',
     );
   }
 
@@ -798,9 +821,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
 
     final confirmed = await _showConfirmationDialog(
-      title: 'Striche abziehen',
+      title: 'Striche verrechnen',
       message:
-          'Wirklich $amount ${_strichLabel(amount)} bei ${member.username} abziehen?',
+          'Wirklich $amount ${_strichLabel(amount)} für ${member.username} verrechnen?',
     );
     if (!mounted || !confirmed) {
       return;
@@ -815,9 +838,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         amount,
         affectsCurrentUser: _isOwnMember(member),
       ),
-      successMessage: 'Strichstand gespeichert',
-      pendingMessage: 'Strichstand gespeichert und wird synchronisiert',
-      fallbackErrorMessage: 'Striche konnten nicht abgezogen werden',
+      successMessage: 'Strichsaldo gespeichert',
+      pendingMessage: 'Strichsaldo gespeichert und wird synchronisiert',
+      fallbackErrorMessage: 'Striche konnten nicht verrechnet werden',
     );
   }
 
@@ -1067,7 +1090,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text('Geld bei ${member.username} abziehen'),
+              title: Text('Geld für ${member.username} einzahlen'),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1078,7 +1101,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   const SizedBox(height: 8),
                   Text(
                     groupSettings.allowArbitraryMoneySettlements
-                        ? 'Beliebige Beträge sind erlaubt. Es wird immer auf volle Striche abgerundet; der Restbetrag wird ignoriert.'
+                        ? 'Beliebige Beträge sind erlaubt. Es werden immer nur volle Striche verrechnet; der Restbetrag wird ignoriert.'
                         : 'Es sind nur Vielfache des Preises pro Strich erlaubt.',
                   ),
                   const SizedBox(height: 12),
@@ -1124,7 +1147,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
   Future<int?> _showStricheSettlementDialog(GroupMember member) {
     return _showStrichAmountDialog(
-      title: 'Striche bei ${member.username} abziehen',
+      title: 'Striche für ${member.username} verrechnen',
     );
   }
 
@@ -1291,7 +1314,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       return null;
     }
 
-    return '${_formatMoney(member.strichCount * _pricePerStrich)} €';
+    return '${_formatMoney(member.strichCount.abs() * _pricePerStrich)} €';
   }
 
   bool _canBookForOtherMembers(GroupMemberRole? ownRole) {
@@ -1346,7 +1369,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         _buildMenuItem(
           action: _MemberAction.settleMoney,
           icon: Icons.payments_outlined,
-          label: 'Geld abziehen',
+          label: 'Geld einzahlen',
           theme: theme,
         ),
       );
@@ -1354,7 +1377,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         _buildMenuItem(
           action: _MemberAction.settleStriche,
           icon: Icons.remove_circle_outline_rounded,
-          label: 'Striche abziehen',
+          label: 'Striche verrechnen',
           theme: theme,
         ),
       );
@@ -1466,7 +1489,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final primaryColor = theme.colorScheme.primary;
     final ownRole = context.watch<GroupRoleProvider>().roleForGroup(
       widget.groupId,
     );
@@ -1550,7 +1572,8 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
                   final member = sortedMembers[index - quickBookItemOffset];
                   final menuEntries = _buildMemberMenuEntries(member, ownRole);
-                  final strichLabel = _strichLabel(member.strichCount);
+                  final saldoLabel = _saldoStatusLabel(member.strichCount);
+                  final saldoColor = _saldoColor(theme, member.strichCount);
                   final memberAmountText = _memberAmountText(member);
                   final showWartBadge = member.role == GroupMemberRole.wart;
                   final showMemberMenu = menuEntries.isNotEmpty;
@@ -1704,7 +1727,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                       ),
                                       const SizedBox(width: 12),
                                       SizedBox(
-                                        width: 96,
+                                        width: 112,
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.end,
@@ -1716,17 +1739,18 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                               style: TextStyle(
                                                 fontSize: 20,
                                                 fontWeight: FontWeight.w700,
-                                                color: primaryColor,
+                                                color: saldoColor,
                                               ),
                                             ),
                                             const SizedBox(height: 1),
                                             Text(
-                                              strichLabel,
+                                              saldoLabel,
                                               maxLines: 1,
                                               overflow: TextOverflow.ellipsis,
                                               style: TextStyle(
                                                 fontSize: 12,
-                                                color: theme.hintColor,
+                                                fontWeight: FontWeight.w500,
+                                                color: saldoColor,
                                               ),
                                             ),
                                             const SizedBox(height: 1),

@@ -338,6 +338,34 @@ class _GroupHomePageState extends State<GroupHomePage> {
     );
   }
 
+  String _strichLabel(int amount) {
+    return amount == 1 ? 'Strich' : 'Striche';
+  }
+
+  String _formatMoney(double value) {
+    return value.toStringAsFixed(2).replaceAll('.', ',');
+  }
+
+  String _saldoStatusLabel(int strichCount) {
+    if (strichCount > 0) {
+      return 'Schulden';
+    }
+    if (strichCount < 0) {
+      return 'Guthaben';
+    }
+    return 'Ausgeglichen';
+  }
+
+  Color _saldoColor(ThemeData theme, int strichCount) {
+    if (strichCount > 0) {
+      return theme.colorScheme.error;
+    }
+    if (strichCount < 0) {
+      return const Color(0xFF2E7D32);
+    }
+    return theme.colorScheme.onSurface;
+  }
+
   String? _groupNameForArgs() {
     final groupName = _groupName?.trim();
     if (groupName == null || groupName.isEmpty) {
@@ -598,7 +626,13 @@ class _GroupHomePageState extends State<GroupHomePage> {
   @override
   Widget build(BuildContext context) {
     final syncProvider = context.watch<SyncProvider>();
-    final currency = (_strichCount * _pricePerStrich).toStringAsFixed(2);
+    final theme = Theme.of(context);
+    final absoluteStrichCount = _strichCount.abs();
+    final saldoColor = _saldoColor(theme, _strichCount);
+    final saldoCountText =
+        '$_strichCount ${_strichLabel(absoluteStrichCount)}';
+    final saldoAmountText =
+        '${_saldoStatusLabel(_strichCount)} · ${_formatMoney(absoluteStrichCount * _pricePerStrich)} €';
     final groupTitle = _groupName?.trim().isNotEmpty == true
         ? _groupName!
         : 'Gruppe ${widget.groupId}';
@@ -672,18 +706,22 @@ class _GroupHomePageState extends State<GroupHomePage> {
                   const SizedBox(height: 45),
                   Center(
                     child: Text(
-                      '$_strichCount ${_strichCount == 1 ? 'Strich' : 'Striche'}',
-                      style: const TextStyle(
+                      saldoCountText,
+                      style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,
+                        color: saldoColor,
                       ),
                     ),
                   ),
                   const SizedBox(height: 15),
                   Center(
                     child: Text(
-                      '$currency €',
-                      style: const TextStyle(fontSize: 18, color: Colors.grey),
+                      saldoAmountText,
+                      style: TextStyle(
+                        fontSize: 18,
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                   const SizedBox(height: 65),

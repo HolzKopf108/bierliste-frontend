@@ -440,9 +440,9 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   }
 
   String get _moneySettlementHelpMessage =>
-      'Wenn aktiviert, dürfen Bierlistenwarte beliebige Geldbeträge abziehen. '
-      'Es wird immer auf volle Striche abgerundet und der Restbetrag ignoriert. '
-      'Beispiel: 2,50 EUR bei 1,00 EUR pro Strich zieht 2 Striche ab. '
+      'Wenn aktiviert, dürfen Bierlistenwarte beliebige Geldbeträge einzahlen. '
+      'Es werden immer nur volle Striche verrechnet und der Restbetrag ignoriert. '
+      'Beispiel: 2,50 EUR bei 1,00 EUR pro Strich verrechnet 2 Striche. '
       'Wenn deaktiviert, sind nur Vielfache des Preises pro Strich erlaubt.';
 
   String get _onlyWartsCanBookForOthersHelpMessage =>
@@ -565,7 +565,7 @@ class _GroupSettingsPageState extends State<GroupSettingsPage> {
   Widget _buildMoneySettlementTile(bool canEditSettings) {
     return _buildSwitchSettingTile(
       canEditSettings: canEditSettings,
-      title: 'Beliebige Geldbeträge für Abzüge erlauben',
+      title: 'Beliebige Geldbeträge für Einzahlungen erlauben',
       value: _allowArbitraryMoneySettlements,
       onChanged: (value) {
         setState(() => _allowArbitraryMoneySettlements = value);

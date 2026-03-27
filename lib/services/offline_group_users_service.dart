@@ -272,7 +272,7 @@ class OfflineGroupUsersService {
       amount: amount,
       localStrichDelta: -settlementStriche,
       affectsCurrentUser: affectsCurrentUser,
-      fallbackErrorMessage: 'Geld konnte nicht abgezogen werden',
+      fallbackErrorMessage: 'Geld konnte nicht eingezahlt werden',
     );
   }
 
@@ -300,7 +300,7 @@ class OfflineGroupUsersService {
       amount: amount,
       localStrichDelta: -amount,
       affectsCurrentUser: affectsCurrentUser,
-      fallbackErrorMessage: 'Striche konnten nicht abgezogen werden',
+      fallbackErrorMessage: 'Striche konnten nicht verrechnet werden',
     );
   }
 
@@ -1342,20 +1342,10 @@ class OfflineGroupUsersService {
   static Future<List<GroupMember>> _applySettlementResponse(
     String userEmail,
     int groupId,
-    int targetUserId,
     GroupSettlementResult settlement,
   ) async {
-    if (settlement.member != null) {
-      await _mergeUpdatedMember(userEmail, groupId, settlement.member!);
-      return (await getGroupMembers(userEmail, groupId)) ?? [];
-    }
-
-    final count = settlement.resolvedStrichCount;
-    if (count == null) {
-      throw const FormatException('Settlement ohne StrichCount');
-    }
-
-    return _applyResolvedStrichCount(userEmail, groupId, targetUserId, count);
+    await _mergeUpdatedMember(userEmail, groupId, settlement.member);
+    return (await getGroupMembers(userEmail, groupId)) ?? [];
   }
 
   static Future<List<GroupMember>> _applyResolvedStrichCount(
@@ -1385,12 +1375,7 @@ class OfflineGroupUsersService {
       return refreshGroupMembers(userEmail, groupId);
     }
 
-    return _applySettlementResponse(
-      userEmail,
-      groupId,
-      targetUserId,
-      settlement,
-    );
+    return _applySettlementResponse(userEmail, groupId, settlement);
   }
 
   static Future<List<GroupMember>> _membersAfterSuccessfulCounterIncrement(
@@ -1803,9 +1788,7 @@ class OfflineGroupUsersService {
     final members = await _currentMembers(userEmail, groupId);
     final updatedMembers = _replaceMemberInList(
       members,
-      updatedMember.copyWith(
-        strichCount: _normalizeStrichCount(updatedMember.strichCount),
-      ),
+      updatedMember,
       addIfMissing: true,
     );
     await saveGroupMembers(userEmail, groupId, updatedMembers);
@@ -1869,18 +1852,14 @@ class OfflineGroupUsersService {
 
       memberFound = true;
       return member.copyWith(
-        strichCount: _normalizeStrichCount(
-          member.strichCount + localStrichDelta,
-        ),
+        strichCount: member.strichCount + localStrichDelta,
       );
     }).toList();
 
     if (!memberFound && addIfMissing && fallbackMember != null) {
       updatedMembers.add(
         fallbackMember.copyWith(
-          strichCount: _normalizeStrichCount(
-            fallbackMember.strichCount + localStrichDelta,
-          ),
+          strichCount: fallbackMember.strichCount + localStrichDelta,
         ),
       );
     }
@@ -1895,14 +1874,13 @@ class OfflineGroupUsersService {
     required bool addIfMissing,
   }) {
     var memberFound = false;
-    final normalizedCount = _normalizeStrichCount(strichCount);
     final updatedMembers = members.map((member) {
       if (member.userId != targetUserId) {
         return member;
       }
 
       memberFound = true;
-      return member.copyWith(strichCount: normalizedCount);
+      return member.copyWith(strichCount: strichCount);
     }).toList();
 
     if (!memberFound && addIfMissing) {
@@ -2261,10 +2239,6 @@ class OfflineGroupUsersService {
     final message = exception.message.trim().toLowerCase();
     return exception.statusCode == null &&
         (message == 'netzwerkfehler' || message.contains('timeout'));
-  }
-
-  static int _normalizeStrichCount(int value) {
-    return value < 0 ? 0 : value;
   }
 
   static String _formatMoney(double value) {

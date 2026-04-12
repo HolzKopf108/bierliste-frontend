@@ -101,6 +101,12 @@ class HttpService {
           headers: headers,
           body: body == null ? null : jsonEncode(body),
         );
+      } else if (method == 'DELETE') {
+        response = await http.delete(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        );
       } else {
         throw UnsupportedError('HTTP-Methode $method nicht unterstützt');
       }
@@ -117,6 +123,7 @@ class HttpService {
     Map<String, String>? headers,
     Object? body,
     bool retryOnUnauthorized = true,
+    bool triggerUnauthorizedCallback = true,
   }) async {
     final accessToken = await TokenService.getAccessToken();
 
@@ -145,7 +152,11 @@ class HttpService {
           body: body == null ? null : jsonEncode(body),
         );
       } else if (method == 'DELETE') {
-        response = await http.delete(uri, headers: headers);
+        response = await http.delete(
+          uri,
+          headers: headers,
+          body: body == null ? null : jsonEncode(body),
+        );
       } else {
         throw UnsupportedError('HTTP-Methode $method nicht unterstützt');
       }
@@ -159,11 +170,14 @@ class HttpService {
             headers: headers,
             body: body,
             retryOnUnauthorized: false,
+            triggerUnauthorizedCallback: triggerUnauthorizedCallback,
           );
         }
 
         if (refreshResult.shouldLogout) {
-          await onUnauthorized?.call(refreshResult.message);
+          if (triggerUnauthorizedCallback) {
+            await onUnauthorized?.call(refreshResult.message);
+          }
           throw UnauthorizedException();
         }
 
@@ -174,7 +188,9 @@ class HttpService {
       }
 
       if (response.statusCode == 401) {
-        await onUnauthorized?.call('Sitzung abgelaufen');
+        if (triggerUnauthorizedCallback) {
+          await onUnauthorized?.call('Sitzung abgelaufen');
+        }
         throw UnauthorizedException();
       }
 

@@ -64,4 +64,53 @@ void main() {
       expect(response.statusCode, 200);
     },
   );
+
+  test(
+    'DELETE without body does not send a JSON content type header',
+    () async {
+      final requestFuture = server!.first;
+      final responseFuture = HttpService.unauthorizedRequest(
+        serverUri!.toString(),
+        'DELETE',
+      );
+
+      final request = await requestFuture;
+      final body = await utf8.decoder.bind(request).join();
+      expect(request.headers.contentType, isNull);
+      expect(body, isEmpty);
+
+      request.response
+        ..statusCode = 200
+        ..write('{}');
+      await request.response.close();
+
+      final response = await responseFuture;
+      expect(response.statusCode, 200);
+    },
+  );
+
+  test(
+    'DELETE with body sends JSON content type and encoded JSON body',
+    () async {
+      final requestFuture = server!.first;
+      final responseFuture = HttpService.unauthorizedRequest(
+        serverUri!.toString(),
+        'DELETE',
+        body: const {'token': 'abc'},
+      );
+
+      final request = await requestFuture;
+      final body = await utf8.decoder.bind(request).join();
+      expect(request.headers.contentType?.mimeType, 'application/json');
+      expect(jsonDecode(body), {'token': 'abc'});
+
+      request.response
+        ..statusCode = 200
+        ..write('{}');
+      await request.response.close();
+
+      final response = await responseFuture;
+      expect(response.statusCode, 200);
+    },
+  );
 }

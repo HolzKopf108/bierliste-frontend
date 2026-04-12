@@ -11,6 +11,7 @@ import 'providers/auth_provider.dart';
 import 'providers/sync_provider.dart';
 import 'services/connectivity_service.dart';
 import 'services/invite_link_service.dart';
+import 'services/android_notification_service.dart';
 import 'app.dart';
 import 'package:bierliste/models/user_settings.dart';
 
@@ -22,6 +23,8 @@ void main() async {
   await Hive.initFlutter();
   Hive.registerAdapter(UserSettingsAdapter());
   Hive.registerAdapter(UserAdapter());
+  await ensureFirebaseInitialized();
+  await AndroidNotificationService.instance.initialize();
 
   final themeProvider = ThemeProvider();
   final inviteLinkService = InviteLinkService();

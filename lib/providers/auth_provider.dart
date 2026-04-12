@@ -3,6 +3,7 @@ import 'package:bierliste/services/http_service.dart';
 import 'package:bierliste/providers/sync_provider.dart';
 import 'package:bierliste/providers/theme_provider.dart';
 import 'package:bierliste/providers/user_provider.dart';
+import 'package:bierliste/services/android_notification_service.dart';
 import 'package:bierliste/services/user_service.dart';
 import 'package:bierliste/services/user_settings_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
@@ -111,6 +112,7 @@ class AuthProvider with ChangeNotifier {
   Future<void> logout({String? reason}) async {
     final logoutReason = reason ?? _authErrorMessage;
 
+    await AndroidNotificationService.instance.clearAuthenticatedSession();
     await TokenService.clearTokens();
     _authenticated = false;
     _userEmail = null;

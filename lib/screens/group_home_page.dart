@@ -4,13 +4,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
+import '../models/group_member_notification.dart';
 import '../providers/sync_provider.dart';
 import '../providers/group_role_provider.dart';
 import '../routes/app_routes.dart';
+import '../services/android_notification_service.dart';
 import '../services/connectivity_service.dart';
 import '../services/group_counter_api_service.dart';
+import '../services/group_notification_api_service.dart';
 import '../services/http_service.dart';
 import '../services/offline_group_settings_service.dart';
+import '../services/offline_group_users_service.dart';
 import '../services/offline_strich_service.dart';
 import '../widgets/toast.dart';
 import '../providers/auth_provider.dart';
@@ -28,25 +32,33 @@ class GroupHomePage extends StatefulWidget {
   State<GroupHomePage> createState() => _GroupHomePageState();
 }
 
-class _GroupHomePageState extends State<GroupHomePage> {
+class _GroupHomePageState extends State<GroupHomePage>
+    with WidgetsBindingObserver {
   final GroupCounterApiService _groupCounterApiService =
       GroupCounterApiService();
+  final GroupNotificationApiService _groupNotificationApiService =
+      GroupNotificationApiService();
   static const _minimumSubmitDuration = Duration(milliseconds: 250);
   static const _primaryActionTransitionDuration = Duration(milliseconds: 220);
   int _strichCount = 0;
   double _pricePerStrich = 0;
   bool _isLoading = true;
   bool _isSubmitting = false;
+  int? _confirmingNotificationId;
   String? _loadErrorMessage;
   String? _groupName;
+  List<GroupMemberNotification> _pendingNotifications = const [];
   SyncProvider? _syncProvider;
+  StreamSubscription<int>? _incomingGroupNotificationSubscription;
   bool _wasOnline = false;
   bool _wasSyncing = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _groupName = widget.groupName?.trim();
+    _listenToIncomingGroupNotifications();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -55,6 +67,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
       unawaited(_loadCounter());
       unawaited(_loadGroupRole());
       unawaited(_loadGroupSettings());
+      unawaited(_loadPendingNotifications());
     });
   }
 
@@ -75,8 +88,19 @@ class _GroupHomePageState extends State<GroupHomePage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _syncProvider?.removeListener(_handleSyncProviderChanged);
+    _incomingGroupNotificationSubscription?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) {
+      return;
+    }
+
+    unawaited(_loadPendingNotifications());
   }
 
   Future<void> _loadGroupRole({bool forceRefresh = false}) async {
@@ -90,6 +114,19 @@ class _GroupHomePageState extends State<GroupHomePage> {
       widget.groupId,
       forceRefresh: forceRefresh,
     );
+  }
+
+  void _listenToIncomingGroupNotifications() {
+    _incomingGroupNotificationSubscription ??= AndroidNotificationService
+        .instance
+        .incomingGroupNotifications
+        .listen((groupId) {
+          if (!mounted || groupId != widget.groupId) {
+            return;
+          }
+
+          unawaited(_loadPendingNotifications());
+        });
   }
 
   void _handleSyncProviderChanged() {
@@ -107,6 +144,7 @@ class _GroupHomePageState extends State<GroupHomePage> {
     if (shouldReload && mounted && !_isLoading && !_isSubmitting) {
       _loadCounter(showLoading: false, triggerSync: false);
       unawaited(_loadGroupSettings());
+      unawaited(_loadPendingNotifications());
     }
   }
 
@@ -413,6 +451,229 @@ class _GroupHomePageState extends State<GroupHomePage> {
     }
   }
 
+  Future<void> _loadPendingNotifications() async {
+    try {
+      final notifications = await _groupNotificationApiService
+          .fetchMyNotifications(widget.groupId);
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _pendingNotifications = _openNotifications(notifications);
+      });
+
+      await _maybeConfirmPendingNotificationAction();
+    } on UnauthorizedException {
+      return;
+    } catch (_) {
+      return;
+    }
+  }
+
+  List<GroupMemberNotification> _openNotifications(
+    List<GroupMemberNotification> notifications,
+  ) {
+    return notifications.where((notification) => notification.isOpen).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  Future<void> _maybeConfirmPendingNotificationAction() async {
+    if (_confirmingNotificationId != null) {
+      return;
+    }
+
+    final notificationId = await AndroidNotificationService.instance
+        .pendingConfirmationNotificationIdForGroup(widget.groupId);
+    if (notificationId == null) {
+      return;
+    }
+
+    await _confirmNotification(notificationId);
+  }
+
+  Future<void> _confirmNotification(int notificationId) async {
+    if (_confirmingNotificationId != null) {
+      return;
+    }
+
+    setState(() {
+      _confirmingNotificationId = notificationId;
+    });
+
+    try {
+      await _groupNotificationApiService.confirmNotification(
+        widget.groupId,
+        notificationId,
+      );
+      await AndroidNotificationService.instance.clearPendingConfirmation(
+        widget.groupId,
+        notificationId,
+      );
+      await _refreshMemberNotificationStatus();
+      await _loadPendingNotifications();
+      if (!mounted) {
+        return;
+      }
+
+      Toast.show(
+        context,
+        'Benachrichtigung bestätigt',
+        type: ToastType.success,
+      );
+    } on UnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
+    } on GroupNotificationApiException catch (e) {
+      if (e.statusCode == 404 || e.statusCode == 409) {
+        await AndroidNotificationService.instance.clearPendingConfirmation(
+          widget.groupId,
+          notificationId,
+        );
+      }
+      if (!mounted) {
+        return;
+      }
+      Toast.show(
+        context,
+        _friendlyNotificationError(e),
+        type: ToastType.warning,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(
+        context,
+        'Benachrichtigung konnte nicht bestätigt werden',
+        type: ToastType.warning,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _confirmingNotificationId = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshMemberNotificationStatus() async {
+    final userEmail = context.read<AuthProvider>().userEmail;
+    if (userEmail == null) {
+      return;
+    }
+
+    if (!await ConnectivityService.isOnline()) {
+      return;
+    }
+
+    try {
+      await OfflineGroupUsersService.refreshGroupMembers(
+        userEmail,
+        widget.groupId,
+      );
+    } on UnauthorizedException {
+      rethrow;
+    } catch (_) {
+      return;
+    }
+  }
+
+  String _friendlyNotificationError(GroupNotificationApiException exception) {
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Benachrichtigung nicht gefunden';
+      default:
+        final message = exception.message.trim();
+        return message.isNotEmpty
+            ? message
+            : 'Benachrichtigung konnte nicht bestätigt werden';
+    }
+  }
+
+  Widget? _buildPendingNotificationSection(ThemeData theme) {
+    if (_pendingNotifications.isEmpty) {
+      return null;
+    }
+
+    final colorScheme = theme.colorScheme;
+    return Column(
+      key: const Key('pendingGroupNotificationSection'),
+      children: _pendingNotifications.map((pendingNotification) {
+        final isConfirmingCurrentNotification =
+            _confirmingNotificationId == pendingNotification.id;
+
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Container(
+            key: Key('pendingGroupNotificationCard_${pendingNotification.id}'),
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.notifications_active_outlined,
+                      color: colorScheme.onPrimaryContainer,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Erinnerung von ${pendingNotification.actorUsername}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          color: colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  pendingNotification.message,
+                  style: TextStyle(
+                    fontSize: 15,
+                    color: colorScheme.onPrimaryContainer,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                FilledButton.icon(
+                  key: Key(
+                    'confirmGroupNotificationButton_${pendingNotification.id}',
+                  ),
+                  onPressed: _confirmingNotificationId != null
+                      ? null
+                      : () => _confirmNotification(pendingNotification.id),
+                  icon: isConfirmingCurrentNotification
+                      ? SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: colorScheme.onPrimary,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle_outline),
+                  label: const Text('Bring ich mit'),
+                ),
+              ],
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   Future<void> _openGroupSettings() async {
     await Navigator.pushNamed(
       context,
@@ -629,25 +890,33 @@ class _GroupHomePageState extends State<GroupHomePage> {
     final theme = Theme.of(context);
     final absoluteStrichCount = _strichCount.abs();
     final saldoColor = _saldoColor(theme, _strichCount);
-    final saldoCountText =
-        '$_strichCount ${_strichLabel(absoluteStrichCount)}';
+    final saldoCountText = '$_strichCount ${_strichLabel(absoluteStrichCount)}';
     final saldoAmountText =
         '${_saldoStatusLabel(_strichCount)} · ${_formatMoney(absoluteStrichCount * _pricePerStrich)} €';
     final groupTitle = _groupName?.trim().isNotEmpty == true
         ? _groupName!
         : 'Gruppe ${widget.groupId}';
     final pendingSyncAction = _buildPendingSyncAction(syncProvider);
+    final pendingNotificationSection = _buildPendingNotificationSection(theme);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(groupTitle),
         leading: IconButton(
           icon: const Icon(Icons.group),
-          onPressed: () => Navigator.pushNamed(
-            context,
-            '/groups',
-            arguments: widget.groupId,
-          ),
+          onPressed: () {
+            Navigator.pushNamed(
+              context,
+              '/groups',
+              arguments: widget.groupId,
+            ).then((_) {
+              if (!mounted) {
+                return;
+              }
+
+              unawaited(_loadPendingNotifications());
+            });
+          },
         ),
         actions: [
           if (pendingSyncAction != null) pendingSyncAction,
@@ -724,6 +993,10 @@ class _GroupHomePageState extends State<GroupHomePage> {
                       ),
                     ),
                   ),
+                  if (pendingNotificationSection != null) ...[
+                    const SizedBox(height: 32),
+                    pendingNotificationSection,
+                  ],
                   const SizedBox(height: 65),
                   ListTile(
                     leading: const Icon(Icons.people),

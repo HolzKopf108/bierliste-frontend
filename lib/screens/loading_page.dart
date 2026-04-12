@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/group.dart';
 import '../providers/auth_provider.dart';
 import '../routes/app_routes.dart';
+import '../services/android_notification_service.dart';
 import '../services/group_api_service.dart';
 import '../services/invite_link_service.dart';
 import '../services/offline_group_activity_service.dart';
@@ -65,15 +66,17 @@ class _LoadingPageState extends State<LoadingPage> {
     Map<String, dynamic>? targetGroupArgs;
     if (authProvider.isAuthenticated) {
       final inviteLinkService = context.read<InviteLinkService>();
-      final inviteHandled = await inviteLinkService.handlePendingInviteIfPossible(
-        context: context,
-      );
+      final inviteHandled = await inviteLinkService
+          .handlePendingInviteIfPossible(context: context);
       if (!mounted) return;
       if (inviteHandled) {
         return;
       }
 
-      targetGroupArgs = await _resolveInitialGroup();
+      targetGroupArgs =
+          await AndroidNotificationService.instance
+              .consumePendingNavigationArgs() ??
+          await _resolveInitialGroup();
       if (!mounted) return;
     }
 

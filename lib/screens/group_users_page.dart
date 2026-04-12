@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/group_member.dart';
@@ -12,6 +14,7 @@ import '../providers/sync_provider.dart';
 import '../providers/user_provider.dart';
 import '../services/connectivity_service.dart';
 import '../services/group_api_service.dart';
+import '../services/group_notification_api_service.dart';
 import '../services/http_service.dart';
 import '../services/offline_group_settings_service.dart';
 import '../services/offline_group_users_service.dart';
@@ -22,6 +25,7 @@ enum SortOption { alphabet, strichCount }
 
 enum _MemberAction {
   bookStriche,
+  sendNotification,
   settleMoney,
   settleStriche,
   promoteToWart,
@@ -354,6 +358,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       case _MemberAction.bookStriche:
         await _handleBookStricheAction(member);
         return;
+      case _MemberAction.sendNotification:
+        await _handleSendNotificationAction(member);
+        return;
       case _MemberAction.promoteToWart:
       case _MemberAction.demoteToMember:
         await _handleRoleAction(member, action);
@@ -367,6 +374,64 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       case _MemberAction.settleStriche:
         await _handleStricheSettlementAction(member);
         return;
+    }
+  }
+
+  Future<void> _handleSendNotificationAction(GroupMember member) async {
+    if (_updatingMemberUserId != null) {
+      return;
+    }
+
+    final message = await _showSendNotificationDialog(member);
+    if (!mounted || message == null) {
+      return;
+    }
+
+    setState(() {
+      _updatingMemberUserId = member.userId;
+    });
+
+    try {
+      await GroupNotificationApiService().sendNotification(
+        widget.groupId,
+        member.userId,
+        message,
+      );
+      await _loadMembers(showLoading: false);
+      if (!mounted) {
+        return;
+      }
+
+      Toast.show(context, 'Benachrichtigung gesendet', type: ToastType.success);
+    } on UnauthorizedException {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(context, 'Keine Berechtigung', type: ToastType.warning);
+    } on GroupNotificationApiException catch (e) {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(
+        context,
+        _friendlyNotificationError(e),
+        type: ToastType.warning,
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      Toast.show(
+        context,
+        'Benachrichtigung konnte nicht gesendet werden',
+        type: ToastType.warning,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _updatingMemberUserId = null;
+        });
+      }
     }
   }
 
@@ -1256,6 +1321,73 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     );
   }
 
+  Future<String?> _showSendNotificationDialog(GroupMember member) async {
+    final controller = TextEditingController(
+      text: _initialNotificationMessage(member),
+    );
+    controller.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: controller.text.length,
+    );
+
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        String? errorText;
+
+        void submit(StateSetter setDialogState) {
+          final message = controller.text.trim();
+          if (message.isEmpty) {
+            setDialogState(() {
+              errorText = 'Bitte einen Text eingeben';
+            });
+            return;
+          }
+          if (message.length > 500) {
+            setDialogState(() {
+              errorText = 'Der Text darf maximal 500 Zeichen lang sein';
+            });
+            return;
+          }
+
+          Navigator.of(dialogContext).pop(message);
+        }
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Benachrichtigung an ${member.username}'),
+              content: TextField(
+                key: const Key('sendGroupNotificationMessageField'),
+                controller: controller,
+                autofocus: true,
+                minLines: 3,
+                maxLines: 5,
+                maxLength: 500,
+                decoration: InputDecoration(
+                  labelText: 'Nachricht',
+                  border: const OutlineInputBorder(),
+                  errorText: errorText,
+                ),
+                onSubmitted: (_) => submit(setDialogState),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton(
+                  onPressed: () => submit(setDialogState),
+                  child: const Text('Senden'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _reloadAfterActionFailure(
     String userEmail,
     GroupRoleProvider groupRoleProvider,
@@ -1310,11 +1442,203 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   }
 
   String? _memberAmountText(GroupMember member) {
+    final outstandingAmount = member.outstandingAmount;
+    if (outstandingAmount != null) {
+      return '${_formatMoney(outstandingAmount.abs())} €';
+    }
+
     if (_pricePerStrich <= 0) {
       return null;
     }
 
     return '${_formatMoney(member.strichCount.abs() * _pricePerStrich)} €';
+  }
+
+  String _initialNotificationMessage(GroupMember member) {
+    final memberAmountText = _formatMoney(_memberOutstandingAmount(member));
+    return 'Bring heute $memberAmountText€ mit';
+  }
+
+  double _memberOutstandingAmount(GroupMember member) {
+    final outstandingAmount = member.outstandingAmount;
+    if (outstandingAmount != null) {
+      return outstandingAmount.abs();
+    }
+
+    if (_pricePerStrich > 0) {
+      return member.strichCount.abs() * _pricePerStrich;
+    }
+
+    return 0;
+  }
+
+  String? _notificationStatusText(GroupMember member) {
+    final lastNotificationSentAt = member.lastNotificationSentAt;
+    if (lastNotificationSentAt == null) {
+      return null;
+    }
+
+    final sentAtText = DateFormat(
+      'dd.MM. HH:mm',
+    ).format(lastNotificationSentAt.toLocal());
+    if (member.hasPendingNotification) {
+      return 'Erinnerung vom $sentAtText noch offen';
+    }
+
+    if (member.lastNotificationConfirmedAt != null) {
+      return 'Erinnerung vom $sentAtText bestätigt';
+    }
+
+    return null;
+  }
+
+  String? _notificationCompactStatusText(GroupMember member) {
+    final lastNotificationSentAt = member.lastNotificationSentAt;
+    if (lastNotificationSentAt == null) {
+      return null;
+    }
+
+    final sentAtText = DateFormat(
+      'dd.MM. HH:mm',
+    ).format(lastNotificationSentAt.toLocal());
+    if (member.hasPendingNotification) {
+      return '$sentAtText · offen';
+    }
+
+    if (member.lastNotificationConfirmedAt != null) {
+      return '$sentAtText · bestätigt';
+    }
+
+    return null;
+  }
+
+  bool _doesSingleLineTextExceedWidth(
+    String text,
+    TextStyle style,
+    double maxWidth,
+    TextScaler textScaler,
+  ) {
+    if (maxWidth <= 0 || !maxWidth.isFinite) {
+      return false;
+    }
+
+    final textPainter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: ui.TextDirection.ltr,
+      maxLines: 1,
+      textScaler: textScaler,
+    )..layout(maxWidth: maxWidth);
+
+    return textPainter.didExceedMaxLines || textPainter.width > maxWidth;
+  }
+
+  Widget _buildAdaptiveSingleLineText(
+    String text, {
+    required TextStyle style,
+    required double minFontSize,
+    Key? textKey,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (!constraints.hasBoundedWidth) {
+          return Text(
+            text,
+            key: textKey,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.ellipsis,
+            style: style,
+          );
+        }
+
+        final textScaler = MediaQuery.textScalerOf(context);
+        final baseFontSize = style.fontSize ?? 14;
+        var resolvedFontSize = baseFontSize;
+        while (resolvedFontSize > minFontSize &&
+            _doesSingleLineTextExceedWidth(
+              text,
+              style.copyWith(fontSize: resolvedFontSize),
+              constraints.maxWidth,
+              textScaler,
+            )) {
+          resolvedFontSize -= 0.5;
+        }
+
+        final resolvedStyle = style.copyWith(fontSize: resolvedFontSize);
+        final stillExceeds = _doesSingleLineTextExceedWidth(
+          text,
+          resolvedStyle,
+          constraints.maxWidth,
+          textScaler,
+        );
+
+        return Text(
+          text,
+          key: textKey,
+          maxLines: 1,
+          softWrap: false,
+          overflow: stillExceeds ? TextOverflow.ellipsis : TextOverflow.clip,
+          style: resolvedStyle,
+        );
+      },
+    );
+  }
+
+  String _friendlyNotificationError(GroupNotificationApiException exception) {
+    switch (exception.statusCode) {
+      case 403:
+        return 'Keine Berechtigung';
+      case 404:
+        return 'Mitglied oder Gruppe nicht gefunden';
+      default:
+        final message = exception.message.trim();
+        return message.isNotEmpty
+            ? message
+            : 'Benachrichtigung konnte nicht gesendet werden';
+    }
+  }
+
+  Widget? _buildNotificationSection(
+    GroupMember member,
+    ThemeData theme, {
+    required GroupMemberRole? ownRole,
+  }) {
+    final canSeeNotificationDetails = ownRole == GroupMemberRole.wart;
+    if (!canSeeNotificationDetails) {
+      return null;
+    }
+
+    final statusText = _notificationStatusText(member);
+    final compactStatusText = _notificationCompactStatusText(member);
+    if (statusText == null || compactStatusText == null) {
+      return null;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Tooltip(
+        message: statusText,
+        waitDuration: const Duration(milliseconds: 350),
+        child: Text(
+          compactStatusText,
+          key: Key('memberNotificationStatus_${member.userId}'),
+          maxLines: 1,
+          softWrap: false,
+          overflow: TextOverflow.fade,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: member.hasPendingNotification
+                ? FontWeight.w600
+                : FontWeight.w500,
+            color: member.hasPendingNotification
+                ? theme.colorScheme.primary
+                : member.lastNotificationConfirmedAt != null
+                ? const Color(0xFF2E7D32)
+                : theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
   }
 
   bool _canBookForOtherMembers(GroupMemberRole? ownRole) {
@@ -1343,6 +1667,10 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     final canBookForOthers = _canBookForOtherMembers(ownRole);
     final isOwnMember = _isOwnMember(member);
     final canManageSettlements = ownRole == GroupMemberRole.wart;
+    final canManageNotifications =
+        ownRole == GroupMemberRole.wart &&
+        !isOwnMember &&
+        member.canReceiveNotification;
     final canManageRole =
         ownRole == GroupMemberRole.wart &&
         (!isOwnMember || member.role == GroupMemberRole.wart);
@@ -1379,6 +1707,22 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
           icon: Icons.remove_circle_outline_rounded,
           label: 'Striche verrechnen',
           theme: theme,
+        ),
+      );
+    }
+
+    if (canManageNotifications) {
+      if (entries.isNotEmpty) {
+        entries.add(const PopupMenuDivider(height: 10));
+      }
+
+      entries.add(
+        _buildMenuItem(
+          action: _MemberAction.sendNotification,
+          icon: Icons.notifications_active_outlined,
+          label: 'Benachrichtigung senden',
+          theme: theme,
+          itemKey: Key('memberNotificationMenuAction_${member.userId}'),
         ),
       );
     }
@@ -1422,6 +1766,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     required IconData icon,
     required String label,
     required ThemeData theme,
+    Key? itemKey,
     bool emphasized = false,
     bool destructive = false,
   }) {
@@ -1438,6 +1783,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
         : colorScheme.onSurfaceVariant;
 
     return PopupMenuItem<_MemberAction>(
+      key: itemKey,
       value: action,
       child: Container(
         padding: emphasized
@@ -1579,6 +1925,11 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   final showMemberMenu = menuEntries.isNotEmpty;
                   final isUpdatingMember =
                       _updatingMemberUserId == member.userId;
+                  final notificationSection = _buildNotificationSection(
+                    member,
+                    theme,
+                    ownRole: ownRole,
+                  );
                   final isQuickBookCoolingDown = _isQuickBookCoolingDown(
                     member.userId,
                   );
@@ -1666,68 +2017,85 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                           crossAxisAlignment:
                                               CrossAxisAlignment.start,
                                           children: [
-                                            Text(
+                                            _buildAdaptiveSingleLineText(
                                               member.username,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
+                                              textKey: Key(
+                                                'memberUsername_${member.userId}',
+                                              ),
                                               style: const TextStyle(
                                                 fontSize: 16,
                                                 fontWeight: FontWeight.bold,
                                               ),
+                                              minFontSize: 13.5,
                                             ),
                                             if (showWartBadge) ...[
                                               const SizedBox(height: 6),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                      horizontal: 7,
-                                                      vertical: 3,
-                                                    ),
-                                                decoration: BoxDecoration(
-                                                  color: theme
-                                                      .colorScheme
-                                                      .primaryContainer,
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        999,
-                                                      ),
+                                              Tooltip(
+                                                message: 'Bierlistenwart',
+                                                waitDuration: const Duration(
+                                                  milliseconds: 350,
                                                 ),
-                                                child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
-                                                  children: [
-                                                    Icon(
-                                                      Icons.verified_user,
-                                                      size: 13,
-                                                      color: theme
-                                                          .colorScheme
-                                                          .onPrimaryContainer,
-                                                    ),
-                                                    const SizedBox(width: 4),
-                                                    Text(
-                                                      'Bierlistenwart',
-                                                      maxLines: 1,
-                                                      overflow:
-                                                          TextOverflow.ellipsis,
-                                                      style: TextStyle(
-                                                        fontSize: 12,
-                                                        fontWeight:
-                                                            FontWeight.w600,
+                                                child: Container(
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                        maxWidth: 150,
+                                                      ),
+                                                  padding:
+                                                      const EdgeInsets.symmetric(
+                                                        horizontal: 7,
+                                                        vertical: 3,
+                                                      ),
+                                                  decoration: BoxDecoration(
+                                                    color: theme
+                                                        .colorScheme
+                                                        .primaryContainer,
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          999,
+                                                        ),
+                                                  ),
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.verified_user,
+                                                        size: 13,
                                                         color: theme
                                                             .colorScheme
                                                             .onPrimaryContainer,
                                                       ),
-                                                    ),
-                                                  ],
+                                                      const SizedBox(width: 4),
+                                                      Flexible(
+                                                        child: _buildAdaptiveSingleLineText(
+                                                          'Bierlistenwart',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            fontWeight:
+                                                                FontWeight.w600,
+                                                            color: theme
+                                                                .colorScheme
+                                                                .onPrimaryContainer,
+                                                          ),
+                                                          minFontSize: 10,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
                                                 ),
                                               ),
                                             ],
+                                            if (notificationSection != null)
+                                              notificationSection,
                                           ],
                                         ),
                                       ),
                                       const SizedBox(width: 12),
-                                      SizedBox(
-                                        width: 112,
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          minWidth: 88,
+                                          maxWidth: 104,
+                                        ),
                                         child: Column(
                                           crossAxisAlignment:
                                               CrossAxisAlignment.end,
@@ -1788,6 +2156,9 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                       ),
                                     )
                                   : PopupMenuButton<_MemberAction>(
+                                      key: Key(
+                                        'memberActionsMenu_${member.userId}',
+                                      ),
                                       tooltip: 'Aktionen',
                                       icon: const Icon(
                                         Icons.more_horiz_rounded,

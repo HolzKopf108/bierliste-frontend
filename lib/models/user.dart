@@ -16,10 +16,14 @@ class User extends HiveObject {
   @HiveField(3)
   bool googleUser;
 
+  @HiveField(4)
+  int? userId;
+
   User({
     required this.email,
     required this.username,
     required this.lastUpdated,
     required this.googleUser,
+    this.userId,
   });
 }

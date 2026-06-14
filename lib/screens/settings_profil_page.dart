@@ -100,64 +100,163 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
     }
   }
 
-  void _showDeleteAccountDialog() {
-    final TextEditingController confirmController = TextEditingController();
-
-    showDialog(
+  Future<void> _startDeleteAccountFlow() async {
+    final shouldContinue = await showDialog<bool>(
       context: context,
-      builder: (context) {
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Text('Konto löschen'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                '⚠️ Dieser Vorgang kann nicht rückgängig gemacht werden.\n'
-                'Um dein Konto zu löschen, gib „LÖSCHEN“ ein.',
-                style: TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: confirmController,
-                decoration: const InputDecoration(
-                  labelText: 'Bestätigung',
-                  border: OutlineInputBorder(),
+          content: const SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Dein Konto wird endgültig gelöscht. Dieser Vorgang kann nicht rückgängig gemacht werden.',
                 ),
-              ),
-            ],
+                SizedBox(height: 12),
+                Text(
+                  'Du wirst aus allen Gruppen entfernt und in den Gruppenverläufen anonymisiert.',
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
               child: const Text('Abbrechen'),
-              onPressed: () => Navigator.of(context).pop(),
             ),
-            ElevatedButton.icon(
-              icon: const Icon(Icons.delete),
-              label: const Text('Löschen'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                if (confirmController.text.trim() == 'LÖSCHEN') {
-                  Navigator.of(context).pop();
-                  final error = await UserService.deleteAccount(
-                    context.read<AuthProvider>(),
-                  );
-                  if (!context.mounted) return;
-                  if (error != null) {
-                    Toast.show(context, error);
-                  }
-                } else {
-                  Toast.show(
-                    context,
-                    'Falsche Eingabe. Bitte „LÖSCHEN“ eingeben.',
-                    type: ToastType.warning,
-                  );
-                }
-              },
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Weiter'),
             ),
           ],
+        );
+      },
+    );
+
+    if (!mounted || shouldContinue != true) {
+      return;
+    }
+
+    await _showDeleteAccountConfirmationDialog();
+  }
+
+  Future<void> _showDeleteAccountConfirmationDialog() async {
+    final authProvider = context.read<AuthProvider>();
+    final confirmController = TextEditingController();
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        var isDeleting = false;
+        String? errorMessage;
+
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> submitDelete() async {
+              if (isDeleting) {
+                return;
+              }
+
+              if (confirmController.text.trim() != 'LÖSCHEN') {
+                setDialogState(() {
+                  errorMessage = 'Bitte gib „LÖSCHEN“ ein, um fortzufahren.';
+                });
+                return;
+              }
+
+              setDialogState(() {
+                isDeleting = true;
+                errorMessage = null;
+              });
+
+              final result = await UserService.deleteAccount();
+              if (!mounted || !dialogContext.mounted) {
+                return;
+              }
+
+              if (result.isSuccess) {
+                Navigator.of(dialogContext).pop();
+                await authProvider.logout();
+                return;
+              }
+
+              if (result.shouldLogout) {
+                Navigator.of(dialogContext).pop();
+                await authProvider.logout(reason: result.message);
+                return;
+              }
+
+              setDialogState(() {
+                isDeleting = false;
+                errorMessage = result.message;
+              });
+            }
+
+            return AlertDialog(
+              title: const Text('Konto endgültig löschen'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Gib „LÖSCHEN“ ein, um dein Konto jetzt zu löschen.',
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: confirmController,
+                      enabled: !isDeleting,
+                      autofocus: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Bestätigung',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    if (errorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        errorMessage!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isDeleting
+                      ? null
+                      : () => Navigator.of(dialogContext).pop(),
+                  child: const Text('Zurück'),
+                ),
+                ElevatedButton.icon(
+                  icon: isDeleting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.delete_forever),
+                  label: Text(
+                    errorMessage == null ? 'Konto löschen' : 'Erneut versuchen',
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: isDeleting ? null : submitDelete,
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -322,7 +421,7 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Dein Konto und alle Daten werden dauerhaft gelöscht. Dieser Vorgang kann nicht rückgängig gemacht werden.',
+                    'Du wirst aus allen Gruppen entfernt, in den Gruppenverläufen anonymisiert und dein Konto wird danach gelöscht.',
                     style: TextStyle(color: Colors.red),
                   ),
                   const SizedBox(height: 16),
@@ -337,7 +436,7 @@ class _SettingsProfilPageState extends State<SettingsProfilPage> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         textStyle: const TextStyle(fontWeight: FontWeight.bold),
                       ),
-                      onPressed: _showDeleteAccountDialog,
+                      onPressed: _startDeleteAccountFlow,
                     ),
                   ),
                 ],

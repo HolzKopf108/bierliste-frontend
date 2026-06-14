@@ -24,7 +24,7 @@ void main() {
   const userEmail = 'sync-race@example.com';
   const groupId = 17;
   const targetUserId = 42;
-  final undoExpiresAt = DateTime.utc(2026, 3, 30, 12, 0, 0);
+  final undoExpiresAt = DateTime.now().toUtc().add(const Duration(days: 7));
 
   Directory? tempDir;
 

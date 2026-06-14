@@ -11,7 +11,6 @@ import '../services/connectivity_service.dart';
 import '../services/group_activity_api_service.dart';
 import '../services/http_service.dart';
 import '../services/offline_group_activity_service.dart';
-import '../services/offline_group_users_service.dart';
 import '../utils/group_activity_formatter.dart';
 
 enum ActivityFilter { all, mine }
@@ -113,7 +112,7 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
       return;
     }
 
-    final currentUserId = await _resolveCurrentUserId(userEmail);
+    final currentUserId = _resolveCurrentUserId();
     final cachedResponse = await OfflineGroupActivityService.getGroupActivities(
       userEmail,
       widget.groupId,
@@ -288,28 +287,8 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
     }
   }
 
-  Future<int?> _resolveCurrentUserId(String userEmail) async {
-    final currentUsername = context.read<UserProvider>().user?.username.trim();
-    if (currentUsername == null || currentUsername.isEmpty) {
-      return null;
-    }
-
-    final members = await OfflineGroupUsersService.getGroupMembers(
-      userEmail,
-      widget.groupId,
-    );
-    if (members == null) {
-      return null;
-    }
-
-    final normalizedCurrentUsername = currentUsername.toLowerCase();
-    for (final member in members) {
-      if (member.username.trim().toLowerCase() == normalizedCurrentUsername) {
-        return member.userId;
-      }
-    }
-
-    return null;
+  int? _resolveCurrentUserId() {
+    return context.read<UserProvider>().user?.userId;
   }
 
   void _handleScroll() {
@@ -449,17 +428,8 @@ class _GroupActivityPageState extends State<GroupActivityPage> {
       return _activities;
     }
 
-    final currentUsername = context.read<UserProvider>().user?.username.trim();
     return _activities.where((activity) {
-      if (_currentUserId != null && activity.involvesUserId(_currentUserId!)) {
-        return true;
-      }
-
-      if (currentUsername == null || currentUsername.isEmpty) {
-        return false;
-      }
-
-      return activity.involvesUsername(currentUsername);
+      return _currentUserId != null && activity.involvesUserId(_currentUserId!);
     }).toList();
   }
 

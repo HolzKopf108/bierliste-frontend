@@ -135,6 +135,7 @@ void main() {
                 username: 'Max',
                 lastUpdated: DateTime.utc(2026, 3, 27),
                 googleUser: false,
+                userId: 1,
               ),
             ),
           ),
@@ -155,6 +156,14 @@ void main() {
     expect(find.textContaining('offen'), findsOneWidget);
     expect(find.byKey(const Key('memberNotificationStatus_3')), findsOneWidget);
     expect(find.textContaining('bestätigt'), findsNWidgets(2));
+
+    expect(find.byKey(const Key('memberOwnIconHighlight_1')), findsOneWidget);
+    expect(find.byKey(const Key('memberOwnIconHighlight_2')), findsNothing);
+    expect(
+      find.byKey(const Key('memberOwnUsernameHighlight_1')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const Key('memberOwnUsernameHighlight_2')), findsNothing);
 
     await tester.tap(find.byKey(const Key('memberActionsMenu_3')));
     await tester.pumpAndSettle();
@@ -218,6 +227,7 @@ void main() {
                   username: 'Max',
                   lastUpdated: DateTime.utc(2026, 3, 27),
                   googleUser: false,
+                  userId: 99,
                 ),
               ),
             ),
@@ -237,8 +247,61 @@ void main() {
       expect(find.byKey(const Key('memberNotificationStatus_2')), findsNothing);
       expect(find.textContaining('offen'), findsNothing);
       expect(find.textContaining('bestätigt'), findsNothing);
+      expect(find.byKey(const Key('memberOwnIconHighlight_2')), findsNothing);
+      expect(
+        find.byKey(const Key('memberOwnUsernameHighlight_2')),
+        findsNothing,
+      );
     },
   );
+
+  testWidgets('own highlight depends on userId and not on matching username', (
+    tester,
+  ) async {
+    ConnectivityService.testIsOnline = () async => false;
+    final members = [
+      GroupMember(
+        userId: 2,
+        username: 'Max',
+        strichCount: 1,
+        role: GroupMemberRole.member,
+      ),
+    ];
+
+    await saveMembers(tester, members);
+
+    await pumpPage(
+      tester,
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<AuthProvider>.value(
+            value: TestAuthProvider(userEmail: 'max@example.com'),
+          ),
+          ChangeNotifierProvider<UserProvider>.value(
+            value: TestUserProvider(
+              User(
+                email: 'max@example.com',
+                username: 'Max',
+                lastUpdated: DateTime.utc(2026, 3, 27),
+                googleUser: false,
+                userId: 99,
+              ),
+            ),
+          ),
+          ChangeNotifierProvider<GroupRoleProvider>.value(
+            value: TestGroupRoleProvider(role: GroupMemberRole.wart),
+          ),
+          ChangeNotifierProvider<SyncProvider>.value(value: TestSyncProvider()),
+        ],
+        child: const MaterialApp(
+          home: GroupUsersPage(groupId: 5, groupName: 'Bierfreunde'),
+        ),
+      ),
+    );
+
+    expect(find.byKey(const Key('memberOwnIconHighlight_2')), findsNothing);
+    expect(find.byKey(const Key('memberOwnUsernameHighlight_2')), findsNothing);
+  });
 }
 
 class TestAuthProvider extends AuthProvider {

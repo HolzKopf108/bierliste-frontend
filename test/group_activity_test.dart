@@ -164,4 +164,44 @@ void main() {
       'Lena hat Einstellungen geändert: Beliebige Einzahlungsbeträge erlaubt: Nein -> Ja.',
     );
   });
+
+  test(
+    'activity parsing prefers display name snapshots and handles null ids',
+    () {
+      final activity = GroupActivity.fromJson({
+        'id': 8,
+        'timestamp': '2026-03-21T12:40:56Z',
+        'type': 'ROLE_GRANTED_WART',
+        'actor': {'userId': 5, 'displayNameSnapshot': 'Max'},
+        'target': {'userId': null},
+        'targetDisplayNameSnapshot': 'Ehemaliges Mitglied',
+      });
+
+      expect(activity.actorUserId, 5);
+      expect(activity.actorName, 'Max');
+      expect(activity.targetUserId, isNull);
+      expect(activity.targetName, 'Ehemaliges Mitglied');
+      expect(
+        GroupActivityFormatter.formatDescription(activity),
+        'Max hat Ehemaliges Mitglied zum Bierlistenwart gemacht.',
+      );
+    },
+  );
+
+  test('activity parsing keeps former member actor snapshots readable', () {
+    final activity = GroupActivity.fromJson({
+      'id': 9,
+      'timestamp': '2026-03-21T12:45:56Z',
+      'type': 'USER_LEFT_GROUP',
+      'actor': {'userId': null},
+      'actorDisplayNameSnapshot': 'Ehemaliges Mitglied',
+    });
+
+    expect(activity.actorUserId, isNull);
+    expect(activity.actorName, 'Ehemaliges Mitglied');
+    expect(
+      GroupActivityFormatter.formatDescription(activity),
+      'Ehemaliges Mitglied hat die Gruppe verlassen.',
+    );
+  });
 }

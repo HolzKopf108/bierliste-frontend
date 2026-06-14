@@ -46,7 +46,7 @@ class GroupUsersPage extends StatefulWidget {
 class _GroupUsersPageState extends State<GroupUsersPage> {
   static const Duration _quickBookCooldown = Duration(milliseconds: 700);
   static const Duration _quickBookAnimationDuration = Duration(
-    milliseconds: 180,
+    milliseconds: 160,
   );
 
   List<GroupMember> _members = [];
@@ -61,7 +61,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   bool _wasSyncing = false;
   final Map<int, DateTime> _quickBookCooldownsByUserId = {};
   final Map<int, Timer> _quickBookCooldownTimersByUserId = {};
-  final Set<int> _pressedMemberUserIds = <int>{};
   final Set<int> _animatedQuickBookUserIds = <int>{};
   final Map<int, Timer> _quickBookAnimationTimersByUserId = {};
 
@@ -123,22 +122,23 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       widget.groupId,
     );
 
-    if (!mounted) return;
-
-    if (cachedMembers != null) {
-      setState(() {
-        _members = cachedMembers;
-        _isLoading = false;
-        _loadErrorMessage = null;
-      });
-    }
-
     unawaited(
       groupRoleProvider.loadRole(userEmail, widget.groupId, forceRefresh: true),
     );
 
     try {
-      if (await ConnectivityService.isOnline()) {
+      final isOnline = await ConnectivityService.isOnline();
+      if (!mounted) return;
+
+      if (!isOnline && cachedMembers != null) {
+        setState(() {
+          _members = cachedMembers;
+          _isLoading = false;
+          _loadErrorMessage = null;
+        });
+      }
+
+      if (isOnline) {
         final members = await OfflineGroupUsersService.refreshGroupMembers(
           userEmail,
           widget.groupId,
@@ -180,11 +180,23 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       }
 
       if (cachedMembers != null) {
+        if (!mounted) return;
+        setState(() {
+          _members = cachedMembers;
+          _isLoading = false;
+          _loadErrorMessage = null;
+        });
         return;
       }
       await _loadCachedMembers(userEmail, fallbackErrorMessage: e.message);
     } on TimeoutException {
       if (cachedMembers != null) {
+        if (!mounted) return;
+        setState(() {
+          _members = cachedMembers;
+          _isLoading = false;
+          _loadErrorMessage = null;
+        });
         return;
       }
       await _loadCachedMembers(
@@ -193,6 +205,12 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       );
     } catch (_) {
       if (cachedMembers != null) {
+        if (!mounted) return;
+        setState(() {
+          _members = cachedMembers;
+          _isLoading = false;
+          _loadErrorMessage = null;
+        });
         return;
       }
       await _loadCachedMembers(
@@ -631,26 +649,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     _quickBookCooldownsByUserId.clear();
   }
 
-  void _setMemberPressed(int userId, bool isPressed) {
-    if (isPressed) {
-      if (_pressedMemberUserIds.contains(userId)) {
-        return;
-      }
-      setState(() {
-        _pressedMemberUserIds.add(userId);
-      });
-      return;
-    }
-
-    if (!_pressedMemberUserIds.contains(userId)) {
-      return;
-    }
-
-    setState(() {
-      _pressedMemberUserIds.remove(userId);
-    });
-  }
-
   void _triggerQuickBookAnimation(int userId) {
     _quickBookAnimationTimersByUserId.remove(userId)?.cancel();
 
@@ -679,7 +677,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
     _quickBookAnimationTimersByUserId.clear();
     _animatedQuickBookUserIds.clear();
-    _pressedMemberUserIds.clear();
   }
 
   Future<void> _handleQuickBookDoubleTap(GroupMember member) async {
@@ -691,7 +688,6 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
       return;
     }
 
-    _setMemberPressed(member.userId, false);
     _triggerQuickBookAnimation(member.userId);
     _startQuickBookCooldown(member.userId);
     await HapticFeedback.selectionClick();
@@ -1403,13 +1399,12 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
   }
 
   bool _isOwnMember(GroupMember member) {
-    final currentUsername = context.read<UserProvider>().user?.username.trim();
-    if (currentUsername == null || currentUsername.isEmpty) {
+    final currentUserId = context.read<UserProvider>().user?.userId;
+    if (currentUserId == null) {
       return false;
     }
 
-    return currentUsername.toLowerCase() ==
-        member.username.trim().toLowerCase();
+    return currentUserId == member.userId;
   }
 
   int _wartCount() {
@@ -1510,6 +1505,130 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
     }
 
     return null;
+  }
+
+  TextStyle _memberNameTextStyle({required bool isOwnMember}) {
+    const baseStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.bold);
+    if (!isOwnMember) {
+      return baseStyle;
+    }
+
+    return baseStyle.copyWith(fontWeight: FontWeight.w800);
+  }
+
+  Widget _buildMemberIcon(
+    ThemeData theme, {
+    required bool isOwnMember,
+    required int userId,
+  }) {
+    final icon = Icon(
+      Icons.person,
+      size: 20,
+      color: theme.colorScheme.onSurface,
+    );
+    if (!isOwnMember) {
+      return icon;
+    }
+
+    return Container(
+      key: Key('memberOwnIconHighlight_$userId'),
+      padding: const EdgeInsets.all(6),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: theme.colorScheme.onSurface.withValues(alpha: 0.18),
+        ),
+      ),
+      child: icon,
+    );
+  }
+
+  Widget _buildMemberName(
+    ThemeData theme,
+    GroupMember member, {
+    required bool isOwnMember,
+  }) {
+    final textKey = Key('memberUsername_${member.userId}');
+    final style = _memberNameTextStyle(isOwnMember: isOwnMember);
+    if (!isOwnMember) {
+      return _buildAdaptiveSingleLineText(
+        member.username,
+        textKey: textKey,
+        style: style,
+        minFontSize: 13.5,
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const horizontalPadding = 8.0;
+        const verticalPadding = 3.0;
+        final maxTextWidth = constraints.hasBoundedWidth
+            ? (constraints.maxWidth - (horizontalPadding * 2)).clamp(
+                0.0,
+                constraints.maxWidth,
+              )
+            : double.infinity;
+
+        final textScaler = MediaQuery.textScalerOf(context);
+        final baseFontSize = style.fontSize ?? 16;
+        var resolvedFontSize = baseFontSize;
+        while (resolvedFontSize > 13.5 &&
+            _doesSingleLineTextExceedWidth(
+              member.username,
+              style.copyWith(fontSize: resolvedFontSize),
+              maxTextWidth,
+              textScaler,
+            )) {
+          resolvedFontSize -= 0.5;
+        }
+
+        final resolvedStyle = style.copyWith(fontSize: resolvedFontSize);
+        final textPainter = TextPainter(
+          text: TextSpan(text: member.username, style: resolvedStyle),
+          textDirection: ui.TextDirection.ltr,
+          maxLines: 1,
+          textScaler: textScaler,
+        )..layout(maxWidth: maxTextWidth);
+        final stillExceeds =
+            textPainter.didExceedMaxLines || textPainter.width > maxTextWidth;
+        final highlightWidth = constraints.hasBoundedWidth
+            ? (stillExceeds
+                      ? constraints.maxWidth
+                      : textPainter.width + (horizontalPadding * 2))
+                  .clamp(0.0, constraints.maxWidth)
+            : textPainter.width + (horizontalPadding * 2);
+
+        return SizedBox(
+          width: highlightWidth,
+          child: Container(
+            key: Key('memberOwnUsernameHighlight_${member.userId}'),
+            padding: const EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: theme.colorScheme.outlineVariant.withValues(alpha: 0.55),
+              ),
+            ),
+            child: Text(
+              member.username,
+              key: textKey,
+              maxLines: 1,
+              softWrap: false,
+              overflow: stillExceeds
+                  ? TextOverflow.ellipsis
+                  : TextOverflow.clip,
+              style: resolvedStyle,
+            ),
+          ),
+        );
+      },
+    );
   }
 
   bool _doesSingleLineTextExceedWidth(
@@ -1616,25 +1735,29 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
 
     return Padding(
       padding: const EdgeInsets.only(top: 6),
-      child: Tooltip(
-        message: statusText,
-        waitDuration: const Duration(milliseconds: 350),
-        child: Text(
-          compactStatusText,
-          key: Key('memberNotificationStatus_${member.userId}'),
-          maxLines: 1,
-          softWrap: false,
-          overflow: TextOverflow.fade,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: member.hasPendingNotification
-                ? FontWeight.w600
-                : FontWeight.w500,
-            color: member.hasPendingNotification
-                ? theme.colorScheme.primary
-                : member.lastNotificationConfirmedAt != null
-                ? const Color(0xFF2E7D32)
-                : theme.colorScheme.onSurfaceVariant,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: double.infinity,
+          child: Tooltip(
+            message: statusText,
+            waitDuration: const Duration(milliseconds: 350),
+            child: _buildAdaptiveSingleLineText(
+              compactStatusText,
+              textKey: Key('memberNotificationStatus_${member.userId}'),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: member.hasPendingNotification
+                    ? FontWeight.w600
+                    : FontWeight.w500,
+                color: member.hasPendingNotification
+                    ? theme.colorScheme.primary
+                    : member.lastNotificationConfirmedAt != null
+                    ? const Color(0xFF2E7D32)
+                    : theme.colorScheme.onSurfaceVariant,
+              ),
+              minFontSize: 10,
+            ),
           ),
         ),
       ),
@@ -1921,6 +2044,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                   final saldoLabel = _saldoStatusLabel(member.strichCount);
                   final saldoColor = _saldoColor(theme, member.strichCount);
                   final memberAmountText = _memberAmountText(member);
+                  final isOwnMember = _isOwnMember(member);
                   final showWartBadge = member.role == GroupMemberRole.wart;
                   final showMemberMenu = menuEntries.isNotEmpty;
                   final isUpdatingMember =
@@ -1930,51 +2054,32 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                     theme,
                     ownRole: ownRole,
                   );
-                  final isQuickBookCoolingDown = _isQuickBookCoolingDown(
-                    member.userId,
-                  );
-                  final isPressed = _pressedMemberUserIds.contains(
-                    member.userId,
-                  );
                   final isQuickBookAnimating = _animatedQuickBookUserIds
                       .contains(member.userId);
-                  final quickBookHighlight =
-                      isQuickBookCoolingDown || isQuickBookAnimating;
-                  final cardColor = quickBookHighlight
-                      ? theme.colorScheme.primaryContainer.withValues(
-                          alpha: isQuickBookAnimating ? 0.65 : 0.4,
+                  final cardColor = isQuickBookAnimating
+                      ? Color.alphaBlend(
+                          theme.colorScheme.primary.withValues(alpha: 0.1),
+                          theme.cardColor,
                         )
                       : theme.cardColor;
+                  final borderColor = isQuickBookAnimating
+                      ? theme.colorScheme.primary.withValues(alpha: 0.18)
+                      : Colors.transparent;
 
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: AnimatedScale(
-                      scale: isPressed || isQuickBookAnimating ? 0.985 : 1,
-                      duration: const Duration(milliseconds: 110),
-                      curve: Curves.easeOutCubic,
+                    child: RepaintBoundary(
                       child: AnimatedContainer(
+                        key: Key('memberCard_${member.userId}'),
                         padding: const EdgeInsets.all(12),
-                        duration: const Duration(milliseconds: 140),
+                        duration: _quickBookAnimationDuration,
                         curve: Curves.easeOutCubic,
                         decoration: BoxDecoration(
                           color: cardColor,
                           borderRadius: BorderRadius.circular(12),
-                          border: quickBookHighlight
-                              ? Border.all(
-                                  color: theme.colorScheme.primary.withValues(
-                                    alpha: isQuickBookAnimating ? 0.45 : 0.22,
-                                  ),
-                                )
-                              : null,
-                          boxShadow: [
-                            BoxShadow(
-                              color: quickBookHighlight
-                                  ? theme.colorScheme.primary.withValues(
-                                      alpha: 0.12,
-                                    )
-                                  : Colors.black12,
-                              blurRadius: quickBookHighlight ? 8 : 4,
-                            ),
+                          border: Border.all(color: borderColor),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 4),
                           ],
                         ),
                         child: Row(
@@ -1985,160 +2090,192 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                 color: Colors.transparent,
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(10),
-                                  onTapDown: canQuickBook
-                                      ? (_) => _setMemberPressed(
-                                          member.userId,
-                                          true,
-                                        )
-                                      : null,
-                                  onTapCancel: canQuickBook
-                                      ? () => _setMemberPressed(
-                                          member.userId,
-                                          false,
-                                        )
-                                      : null,
-                                  onTapUp: canQuickBook
-                                      ? (_) => _setMemberPressed(
-                                          member.userId,
-                                          false,
-                                        )
-                                      : null,
+                                  overlayColor:
+                                      WidgetStateProperty.resolveWith<Color?>((
+                                        states,
+                                      ) {
+                                        if (!canQuickBook) {
+                                          return null;
+                                        }
+                                        if (states.contains(
+                                          WidgetState.pressed,
+                                        )) {
+                                          return theme.colorScheme.primary
+                                              .withValues(alpha: 0.06);
+                                        }
+                                        if (states.contains(
+                                              WidgetState.hovered,
+                                            ) ||
+                                            states.contains(
+                                              WidgetState.focused,
+                                            )) {
+                                          return theme.colorScheme.primary
+                                              .withValues(alpha: 0.03);
+                                        }
+                                        return null;
+                                      }),
                                   onDoubleTap: canQuickBook
                                       ? () => _handleQuickBookDoubleTap(member)
                                       : null,
-                                  child: Row(
+                                  child: Column(
                                     crossAxisAlignment:
-                                        CrossAxisAlignment.center,
+                                        CrossAxisAlignment.start,
                                     children: [
-                                      const Icon(Icons.person),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            _buildAdaptiveSingleLineText(
-                                              member.username,
-                                              textKey: Key(
-                                                'memberUsername_${member.userId}',
-                                              ),
-                                              style: const TextStyle(
-                                                fontSize: 16,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                              minFontSize: 13.5,
-                                            ),
-                                            if (showWartBadge) ...[
-                                              const SizedBox(height: 6),
-                                              Tooltip(
-                                                message: 'Bierlistenwart',
-                                                waitDuration: const Duration(
-                                                  milliseconds: 350,
+                                      Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.center,
+                                        children: [
+                                          _buildMemberIcon(
+                                            theme,
+                                            isOwnMember: isOwnMember,
+                                            userId: member.userId,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                _buildMemberName(
+                                                  theme,
+                                                  member,
+                                                  isOwnMember: isOwnMember,
                                                 ),
-                                                child: Container(
-                                                  constraints:
-                                                      const BoxConstraints(
-                                                        maxWidth: 150,
-                                                      ),
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 7,
-                                                        vertical: 3,
-                                                      ),
-                                                  decoration: BoxDecoration(
-                                                    color: theme
-                                                        .colorScheme
-                                                        .primaryContainer,
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          999,
-                                                        ),
-                                                  ),
-                                                  child: Row(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
+                                                if (showWartBadge) ...[
+                                                  const SizedBox(height: 6),
+                                                  Wrap(
+                                                    spacing: 6,
+                                                    runSpacing: 6,
                                                     children: [
-                                                      Icon(
-                                                        Icons.verified_user,
-                                                        size: 13,
-                                                        color: theme
-                                                            .colorScheme
-                                                            .onPrimaryContainer,
-                                                      ),
-                                                      const SizedBox(width: 4),
-                                                      Flexible(
-                                                        child: _buildAdaptiveSingleLineText(
-                                                          'Bierlistenwart',
-                                                          style: TextStyle(
-                                                            fontSize: 12,
-                                                            fontWeight:
-                                                                FontWeight.w600,
-                                                            color: theme
-                                                                .colorScheme
-                                                                .onPrimaryContainer,
+                                                      if (showWartBadge)
+                                                        Tooltip(
+                                                          message:
+                                                              'Bierlistenwart',
+                                                          waitDuration:
+                                                              const Duration(
+                                                                milliseconds:
+                                                                    350,
+                                                              ),
+                                                          child: Container(
+                                                            constraints:
+                                                                const BoxConstraints(
+                                                                  maxWidth: 150,
+                                                                ),
+                                                            padding:
+                                                                const EdgeInsets.symmetric(
+                                                                  horizontal: 7,
+                                                                  vertical: 3,
+                                                                ),
+                                                            decoration: BoxDecoration(
+                                                              color: theme
+                                                                  .colorScheme
+                                                                  .primaryContainer,
+                                                              borderRadius:
+                                                                  BorderRadius.circular(
+                                                                    999,
+                                                                  ),
+                                                            ),
+                                                            child: Row(
+                                                              mainAxisSize:
+                                                                  MainAxisSize
+                                                                      .min,
+                                                              children: [
+                                                                Icon(
+                                                                  Icons
+                                                                      .verified_user,
+                                                                  size: 13,
+                                                                  color: theme
+                                                                      .colorScheme
+                                                                      .onPrimaryContainer,
+                                                                ),
+                                                                const SizedBox(
+                                                                  width: 4,
+                                                                ),
+                                                                Flexible(
+                                                                  child: _buildAdaptiveSingleLineText(
+                                                                    'Bierlistenwart',
+                                                                    style: TextStyle(
+                                                                      fontSize:
+                                                                          12,
+                                                                      fontWeight:
+                                                                          FontWeight
+                                                                              .w600,
+                                                                      color: theme
+                                                                          .colorScheme
+                                                                          .onPrimaryContainer,
+                                                                    ),
+                                                                    minFontSize:
+                                                                        10,
+                                                                  ),
+                                                                ),
+                                                              ],
+                                                            ),
                                                           ),
-                                                          minFontSize: 10,
                                                         ),
-                                                      ),
                                                     ],
                                                   ),
-                                                ),
-                                              ),
-                                            ],
-                                            if (notificationSection != null)
-                                              notificationSection,
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      ConstrainedBox(
-                                        constraints: const BoxConstraints(
-                                          minWidth: 88,
-                                          maxWidth: 104,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              member.strichCount.toString(),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 20,
-                                                fontWeight: FontWeight.w700,
-                                                color: saldoColor,
-                                              ),
+                                                ],
+                                              ],
                                             ),
-                                            const SizedBox(height: 1),
-                                            Text(
-                                              saldoLabel,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w500,
-                                                color: saldoColor,
-                                              ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          ConstrainedBox(
+                                            constraints: const BoxConstraints(
+                                              minWidth: 88,
+                                              maxWidth: 104,
                                             ),
-                                            const SizedBox(height: 1),
-                                            if (memberAmountText != null) ...[
-                                              Text(
-                                                memberAmountText,
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.w500,
-                                                  color: theme
-                                                      .colorScheme
-                                                      .onSurfaceVariant,
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                Text(
+                                                  member.strichCount.toString(),
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 20,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: saldoColor,
+                                                  ),
                                                 ),
-                                              ),
-                                            ],
-                                          ],
-                                        ),
+                                                const SizedBox(height: 1),
+                                                Text(
+                                                  saldoLabel,
+                                                  maxLines: 1,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: saldoColor,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 1),
+                                                if (memberAmountText !=
+                                                    null) ...[
+                                                  Text(
+                                                    memberAmountText,
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.w500,
+                                                      color: theme
+                                                          .colorScheme
+                                                          .onSurfaceVariant,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ],
+                                            ),
+                                          ),
+                                        ],
                                       ),
+                                      if (notificationSection != null)
+                                        notificationSection,
                                     ],
                                   ),
                                 ),

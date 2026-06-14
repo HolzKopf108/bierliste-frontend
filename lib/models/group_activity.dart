@@ -72,14 +72,22 @@ class GroupActivity {
   });
 
   factory GroupActivity.fromJson(Map<String, dynamic> json) {
-    final actor = _readUser(json['actor']);
-    final target = _readUser(json['target']);
+    final actor = _readUser(
+      json['actor'],
+      preferredName: _readNullableString(json['actorDisplayNameSnapshot']),
+    );
+    final target = _readUser(
+      json['target'],
+      preferredName: _readNullableString(json['targetDisplayNameSnapshot']),
+    );
     final meta = Map<String, dynamic>.from(json)
       ..remove('id')
       ..remove('timestamp')
       ..remove('type')
       ..remove('actor')
       ..remove('target');
+    meta.remove('actorDisplayNameSnapshot');
+    meta.remove('targetDisplayNameSnapshot');
 
     if (json['type'] != null) {
       meta['rawType'] = json['type'].toString();
@@ -104,7 +112,7 @@ class GroupActivity {
       timestamp: _readDateTime(json['timestamp'], 'timestamp'),
       type: ActivityType.fromJsonValue(json['type']),
       actorUserId: _readNullableInt(json['actorUserId']),
-      actorName: _readString(json['actorName'], 'actorName'),
+      actorName: _readNullableString(json['actorName']) ?? 'Unbekannt',
       targetUserId: _readNullableInt(json['targetUserId']),
       targetName: _readNullableString(json['targetName']),
       meta: rawMeta is Map ? _normalizeMap(rawMeta) : const {},
@@ -179,19 +187,6 @@ class GroupActivity {
     return null;
   }
 
-  static String _readString(dynamic value, String key) {
-    if (value is! String) {
-      throw FormatException('Ungueltiges Textfeld: $key');
-    }
-
-    final trimmedValue = value.trim();
-    if (trimmedValue.isEmpty) {
-      throw FormatException('Leeres Textfeld: $key');
-    }
-
-    return trimmedValue;
-  }
-
   static String? _readNullableString(dynamic value) {
     if (value is! String) {
       return null;
@@ -213,15 +208,18 @@ class GroupActivity {
     return DateTime.parse(value);
   }
 
-  static _ActivityUser _readUser(dynamic value) {
+  static _ActivityUser _readUser(dynamic value, {String? preferredName}) {
     if (value is! Map) {
-      return const _ActivityUser();
+      return _ActivityUser(name: preferredName);
     }
 
     final normalizedValue = _normalizeMap(value);
     return _ActivityUser(
       userId: _readNullableInt(normalizedValue['userId']),
-      name: _readNullableString(normalizedValue['usernameSnapshot']),
+      name:
+          preferredName ??
+          _readNullableString(normalizedValue['displayNameSnapshot']) ??
+          _readNullableString(normalizedValue['usernameSnapshot']),
     );
   }
 

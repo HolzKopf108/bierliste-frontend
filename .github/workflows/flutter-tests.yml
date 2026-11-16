@@ -1,0 +1,28 @@
+name: Flutter tests
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout 7.0.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Set up Flutter (flutter-action 2.23.0)
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.50.0'
+          channel: stable
+          cache: true
+      - name: Prepare non-secret test configuration
+        run: |
+          cp .github/fixtures/app_config.dart lib/config/app_config.dart
+          cp .github/fixtures/firebase_options.dart lib/firebase_options.dart
+          touch .env
+      - run: flutter pub get
+      - run: flutter test

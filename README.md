@@ -1,5 +1,14 @@
 # bierliste-frontend
 
+## Offline-Sync (aktueller Stand)
+Die Frontend-Unterissues #73 bis #81 zu Backend-Epic #12 sind umgesetzt. Eigene
+Striche werden pro Benutzer und Gruppe dauerhaft als Events gespeichert und ueber
+die idempotente Batch-API synchronisiert. Status und Sync-Probleme sind im UI sichtbar.
+Details, Grenzen und manuelle Testschritte stehen in [OFFLINE_SYNC.md](OFFLINE_SYNC.md).
+Automatisierte Tests: `flutter test`; CI: `.github/workflows/flutter-tests.yml`.
+Aktuelle SDK-Versionen und Migrationen: [DEPENDENCY_UPGRADE.md](DEPENDENCY_UPGRADE.md).
+Die nachfolgende aeltere Projektuebersicht ist in Teilen historisch.
+
 Flutter-Frontend für die Bierlisten-App. Nutzer können sich registrieren/anmelden, Gruppen ansehen, Striche erfassen und ihr Profil/Settings verwalten. Das Frontend spricht ein REST-Backend; insbesondere die Gruppenfunktionen sind teilweise nur UI-Prototypen oder nutzen Platzhalter-APIs (siehe Feature-Status und "Unklar / TBD").
 
 ## Projektüberblick

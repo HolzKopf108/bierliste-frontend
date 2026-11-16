@@ -34,6 +34,7 @@ void main() {
     ConnectivityService.testIsServerOnline = null;
     GroupCounterApiService.testFetchMyGroupCounter = null;
     GroupCounterApiService.testIncrementMyGroupCounter = null;
+    GroupCounterApiService.testSyncEvents = null;
     GroupCounterApiService.testIncrementGroupMemberCounter = null;
     GroupCounterApiService.testUndoCounterIncrement = null;
     GroupApiService.testFetchGroupMembers = null;
@@ -47,6 +48,21 @@ void main() {
     await resetTestState();
     tempDir = await Directory.systemTemp.createTemp('bierliste_sync_race_');
     Hive.init(tempDir!.path);
+    GroupCounterApiService.testSyncEvents = (operations) async {
+      final results = <Map<String, dynamic>>[];
+      for (final operation in operations) {
+        final counter = await GroupCounterApiService.testIncrementMyGroupCounter!(
+          operation.groupId,
+          operation.payload['amount'] as int,
+        );
+        results.add({
+          'clientEventId': operation.clientEventId,
+          'status': 'applied',
+          'serverStateDelta': counter.toJson(),
+        });
+      }
+      return results;
+    };
   });
 
   tearDown(() async {
@@ -200,7 +216,7 @@ void main() {
   );
 
   test(
-    'own-counter retry path drops local increment plus queued undo without backend undo call',
+    'own-counter retry retains an uncertain upload and undo until reconciliation',
     () async {
       ConnectivityService.testIsOnline = () async => true;
       final incrementStarted = Completer<void>();
@@ -260,7 +276,7 @@ void main() {
         await OfflineStrichService.syncPendingOperations(userEmail),
         isTrue,
       );
-      expect(await PendingSyncQueueService.getOperations(userEmail), isEmpty);
+      expect(await PendingSyncQueueService.getOperations(userEmail), hasLength(2));
       expect(undoCalls, 0);
       expect(
         await OfflineStrichService.getConfirmedIncrement(

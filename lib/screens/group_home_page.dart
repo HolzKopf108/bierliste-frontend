@@ -191,7 +191,10 @@ class _GroupHomePageState extends State<GroupHomePage>
         counter.count,
         expectedRevision: revision,
       );
-      final count = await OfflineStrichService.getEffectiveCounter(userEmail, widget.groupId);
+      final count = await OfflineStrichService.getEffectiveCounter(
+        userEmail,
+        widget.groupId,
+      );
       if (!mounted) return;
 
       setState(() {
@@ -241,9 +244,21 @@ class _GroupHomePageState extends State<GroupHomePage>
       Toast.show(context, 'Strich konnte nicht gespeichert werden');
     } finally {
       await _ensureMinimumSubmitDuration(startedAt);
+      int? count;
+      try {
+        count = await OfflineStrichService.getEffectiveCounter(
+          userEmail,
+          widget.groupId,
+        );
+      } catch (_) {
+        if (mounted) {
+          Toast.show(context, 'Lokaler Stand konnte nicht geladen werden');
+        }
+      }
       if (mounted) {
         setState(() {
           _isSubmitting = false;
+          if (count != null) _strichCount = count;
         });
       }
     }
@@ -255,7 +270,10 @@ class _GroupHomePageState extends State<GroupHomePage>
     String userEmail, {
     required String fallbackErrorMessage,
   }) async {
-    final count = await OfflineStrichService.getEffectiveCounter(userEmail, widget.groupId);
+    final count = await OfflineStrichService.getEffectiveCounter(
+      userEmail,
+      widget.groupId,
+    );
     if (!mounted) return;
 
     setState(() {
@@ -264,7 +282,13 @@ class _GroupHomePageState extends State<GroupHomePage>
       _loadErrorMessage = null;
     });
 
-    if (lastOnlineCount == 0 && pendingCount == 0) {
+    if (count == 0 &&
+        (await PendingSyncQueueService.counterSnapshot(
+              userEmail,
+              widget.groupId,
+            )).count ==
+            null &&
+        mounted) {
       setState(() {
         _loadErrorMessage = fallbackErrorMessage;
       });
@@ -281,7 +305,10 @@ class _GroupHomePageState extends State<GroupHomePage>
       widget.groupId,
       amount,
     );
-    final count = await OfflineStrichService.getEffectiveCounter(userEmail, widget.groupId);
+    final count = await OfflineStrichService.getEffectiveCounter(
+      userEmail,
+      widget.groupId,
+    );
     if (!mounted) return _StrichSubmitResult.failed;
 
     setState(() {

@@ -4,9 +4,12 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 
 class ConnectivityService {
-  static Stream<void> get changes => testIsOnline != null
-      ? const Stream.empty()
-      : Connectivity().onConnectivityChanged.map((_) {});
+  static Stream<void>? testChanges;
+  static Stream<void> get changes =>
+      testChanges ??
+      (testIsOnline != null
+          ? const Stream.empty()
+          : Connectivity().onConnectivityChanged.map((_) {}));
   static Future<bool> Function()? testIsOnline;
   static Future<bool> Function(String url)? testIsServerOnline;
   static Future<bool> Function()? testIsDeviceOnline;

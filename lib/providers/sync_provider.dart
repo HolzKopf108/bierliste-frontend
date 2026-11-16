@@ -22,9 +22,14 @@ class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
   StreamSubscription<String>? _queueSubscription;
   bool _disposed = false;
   int _statusRead = 0;
-  List<PendingSyncOperation> get problems => List.unmodifiable(_operations.where((operation) => operation.status == 'failed'));
-  bool hasPendingForGroup(int groupId) => _operations.any((operation) => operation.groupId == groupId && operation.status != 'failed');
-  bool hasProblemsForGroup(int groupId) => problems.any((operation) => operation.groupId == groupId);
+  List<PendingSyncOperation> get problems => List.unmodifiable(
+    _operations.where((operation) => operation.status == 'failed'),
+  );
+  bool hasPendingForGroup(int groupId) => _operations.any(
+    (operation) => operation.groupId == groupId && operation.status != 'failed',
+  );
+  bool hasProblemsForGroup(int groupId) =>
+      problems.any((operation) => operation.groupId == groupId);
 
   Future<void> dismissProblem(String operationId) async {
     final userEmail = await TokenService.getUserEmail();
@@ -43,14 +48,15 @@ class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
   bool get hasPendingSync => _hasPendingSync;
 
   SyncProvider() {
-    WidgetsBinding.instance.addObserver(this);
-    _connectivitySubscription = ConnectivityService.changes.listen((_) {
-      if (!_disposed && _foreground) unawaited(requestSync());
-    });
     initialize();
   }
 
   void initialize() {
+    WidgetsBinding.instance.removeObserver(this);
+    WidgetsBinding.instance.addObserver(this);
+    _connectivitySubscription ??= ConnectivityService.changes.listen((_) {
+      if (!_disposed && _foreground) unawaited(requestSync());
+    });
     _actualOnline = false;
     _isSyncing = false;
     _hasPendingSync = false;
@@ -76,10 +82,14 @@ class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
   Future<void> refreshPendingSyncStatus() async {
     final read = ++_statusRead;
     final userEmail = await TokenService.getUserEmail();
-    final operations = userEmail == null ? <PendingSyncOperation>[] : await PendingSyncQueueService.getOperations(userEmail);
+    final operations = userEmail == null
+        ? <PendingSyncOperation>[]
+        : await PendingSyncQueueService.getOperations(userEmail);
     if (_disposed || read != _statusRead) return;
     _operations = operations;
-    _hasPendingSync = operations.any((operation) => operation.status != 'failed');
+    _hasPendingSync = operations.any(
+      (operation) => operation.status != 'failed',
+    );
     notifyListeners();
   }
 
@@ -147,8 +157,10 @@ class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
     await _checkOnlineStatus();
   }
 
-  Future<void> _runMonitorCycle() => _monitorInFlight ??=
-      _monitorCycle().whenComplete(() { _monitorInFlight = null; });
+  Future<void> _runMonitorCycle() =>
+      _monitorInFlight ??= _monitorCycle().whenComplete(() {
+        _monitorInFlight = null;
+      });
 
   Future<void> _monitorCycle() async {
     await refreshPendingSyncStatus();
@@ -277,7 +289,9 @@ class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       _foreground = true;
       startMonitoring();
-    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.detached) {
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.detached) {
       _foreground = false;
       stopMonitoring();
     }

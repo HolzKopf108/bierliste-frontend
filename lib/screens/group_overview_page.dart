@@ -305,9 +305,13 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: ListTile(
-                        leading: Row(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(Icons.group), SyncStatusIndicator(groupId: group.id),
-                        ]),
+                        leading: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.group),
+                            SyncStatusIndicator(groupId: group.id),
+                          ],
+                        ),
                         title: Text(group.name),
                         trailing: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),

@@ -1,6 +1,9 @@
 import 'package:bierliste/models/confirmed_counter_increment.dart';
+
 import 'dart:async';
+
 import '../models/counter_increment_result.dart';
+
 import 'package:bierliste/models/offline_counter_action_result.dart';
 import 'package:bierliste/models/pending_sync_operation.dart';
 import 'package:bierliste/services/connectivity_service.dart';
@@ -30,7 +33,12 @@ class OfflineStrichService {
     int? expectedRevision,
   }) async {
     if (targetUserId == null) {
-      await PendingSyncQueueService.recordCounter(userEmail, groupId, count, expectedRevision: expectedRevision);
+      await PendingSyncQueueService.recordCounter(
+        userEmail,
+        groupId,
+        count,
+        expectedRevision: expectedRevision,
+      );
     }
     final box = await _openBox();
     await box.put(
@@ -44,6 +52,13 @@ class OfflineStrichService {
     int groupId, {
     int? targetUserId,
   }) async {
+    if (targetUserId == null) {
+      final snapshot = await PendingSyncQueueService.counterSnapshot(
+        userEmail,
+        groupId,
+      );
+      if (snapshot.count != null) return snapshot.count!;
+    }
     final box = await _openBox();
     return box.get(
       _lastOnlineCounterKey(userEmail, groupId, targetUserId),
@@ -304,11 +319,24 @@ class OfflineStrichService {
               operation.groupId == groupId;
         }, orElse: () => null);
 
-    if (originalOperation != null && !isSyncing &&
-        originalOperation.status == 'pending' && originalOperation.retryCount == 0) {
-      await PendingSyncQueueService.removeOperations(userEmail, [
-        originalOperation.id,
-      ]);
+    if (originalOperation?.status == 'failed') {
+      return OfflineCounterActionResult(
+        count: await _effectiveOwnCounterCount(userEmail, groupId),
+        hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
+          userEmail,
+        ),
+        errorMessage: 'Aktion wurde nicht gebucht',
+      );
+    }
+
+    if (originalOperation != null &&
+        !isSyncing &&
+        originalOperation.status == 'pending' &&
+        originalOperation.retryCount == 0 &&
+        await PendingSyncQueueService.removeUnsentCounterIncrement(
+          userEmail,
+          originalOperation.id,
+        )) {
       return OfflineCounterActionResult(
         count: await _effectiveOwnCounterCount(userEmail, groupId),
         hasPendingSync: await PendingSyncQueueService.hasPendingOperations(
@@ -358,16 +386,15 @@ class OfflineStrichService {
     }).toList();
   }
 
-  static Future<bool> syncPendingOperations(
-    String userEmail, {
-    int? groupId,
-  }) {
+  static Future<bool> syncPendingOperations(String userEmail, {int? groupId}) {
     final previous = _syncs[userEmail] ?? Future<bool>.value(true);
     late Future<bool> future;
-    future = previous.catchError((_) => false).then((_) =>
-      _syncPendingOperations(userEmail, groupId: groupId)).whenComplete(() {
-        if (identical(_syncs[userEmail], future)) _syncs.remove(userEmail);
-      });
+    future = previous
+        .catchError((_) => false)
+        .then((_) => _syncPendingOperations(userEmail, groupId: groupId))
+        .whenComplete(() {
+          if (identical(_syncs[userEmail], future)) _syncs.remove(userEmail);
+        });
     _syncs[userEmail] = future;
     return future;
   }
@@ -383,6 +410,7 @@ class OfflineStrichService {
       groupId: groupId,
     );
 
+    final blockedGroups = <int>{};
     final syncableOperations = operations.where((operation) {
       if (operation.domain != PendingSyncOperation.domainCounter) {
         return false;
@@ -392,9 +420,12 @@ class OfflineStrichService {
               PendingSyncOperation.undoOwnCounterIncrement) {
         return false;
       }
+      if (operation.status == 'failed') return false;
       if (!operation.isReadyForSync) {
+        blockedGroups.add(operation.groupId);
         return false;
       }
+      if (blockedGroups.contains(operation.groupId)) return false;
       if (groupId != null && operation.groupId != groupId) {
         return false;
       }
@@ -406,6 +437,7 @@ class OfflineStrichService {
     }
 
     var allSuccessful = true;
+    blockedGroups.clear();
     final attempted = <String>{};
 
     for (final operation in syncableOperations) {
@@ -413,14 +445,35 @@ class OfflineStrichService {
         continue;
       }
       if (attempted.contains(operation.id)) continue;
+      if (blockedGroups.contains(operation.groupId)) continue;
 
       if (operation.operationType == PendingSyncOperation.incrementOwnCounter) {
-        final batch = syncableOperations.skipWhile((entry) => entry.id != operation.id)
-            .takeWhile((entry) => entry.operationType == PendingSyncOperation.incrementOwnCounter)
-            .where((entry) => !attempted.contains(entry.id)).take(20).toList();
+        final batch = syncableOperations
+            .skipWhile((entry) => entry.id != operation.id)
+            .takeWhile(
+              (entry) =>
+                  entry.operationType ==
+                  PendingSyncOperation.incrementOwnCounter,
+            )
+            .where(
+              (entry) =>
+                  !attempted.contains(entry.id) &&
+                  !blockedGroups.contains(entry.groupId),
+            )
+            .take(20)
+            .toList();
         attempted.addAll(batch.map((entry) => entry.id));
         if (!await _uploadBatch(userEmail, batch)) allSuccessful = false;
         operations = await PendingSyncQueueService.getOperations(userEmail);
+        final batchIds = batch.map((entry) => entry.id).toSet();
+        blockedGroups.addAll(
+          operations
+              .where(
+                (entry) =>
+                    batchIds.contains(entry.id) && entry.status != 'failed',
+              )
+              .map((entry) => entry.groupId),
+        );
         continue;
       }
 
@@ -438,49 +491,121 @@ class OfflineStrichService {
     return allSuccessful;
   }
 
-  static Future<bool> _uploadBatch(String userEmail, List<PendingSyncOperation> batch) async {
-    final expired = batch.where((operation) => DateTime.now().toUtc().difference(operation.createdAt) >= const Duration(days: 90)).toList();
+  static Future<bool> _uploadBatch(
+    String userEmail,
+    List<PendingSyncOperation> batch,
+  ) async {
+    final expired = batch
+        .where(
+          (operation) =>
+              DateTime.now().toUtc().difference(operation.createdAt) >=
+              const Duration(days: 90),
+        )
+        .toList();
     for (final operation in expired) {
-      await PendingSyncQueueService.replaceOperation(userEmail, operation.copyWith(status: 'failed',
-        error: 'Aktion ist zu alt. Bitte den Gruppenstand pruefen.'));
+      await PendingSyncQueueService.replaceOperation(
+        userEmail,
+        operation.copyWith(
+          status: 'failed',
+          error: 'Aktion ist zu alt. Bitte den Gruppenstand pruefen.',
+        ),
+      );
     }
     batch = batch.where((operation) => !expired.contains(operation)).toList();
     if (batch.isEmpty) return false;
     for (final operation in batch) {
-      await PendingSyncQueueService.replaceOperation(userEmail, operation.copyWith(status: 'syncing'));
+      await PendingSyncQueueService.replaceOperation(
+        userEmail,
+        operation.copyWith(status: 'syncing'),
+      );
     }
     try {
       final results = await GroupCounterApiService().syncEvents(batch);
       var successful = true;
+      final acknowledgedByGroup = <int, List<String>>{};
+      final counts = <int, int>{};
+      final duplicateGroups = <int>{};
       for (final operation in batch) {
-        final result = results.firstWhere((entry) => entry['clientEventId'] == operation.clientEventId);
+        final result = results.firstWhere(
+          (entry) => entry['clientEventId'] == operation.clientEventId,
+        );
         if (result['status'] == 'failed') {
           successful = false;
-          final permanent = result['resolution'] == 'drop' ||
+          final permanent =
+              result['resolution'] == 'drop' ||
               const [400, 403, 404, 409].contains(result['statusCode']);
-          await PendingSyncQueueService.replaceOperation(userEmail, permanent
-              ? operation.copyWith(status: 'failed', error: result['error']?.toString() ?? 'Aktion nicht mehr gueltig')
-              : PendingSyncQueueService.scheduleRetry(operation));
+          await PendingSyncQueueService.replaceOperation(
+            userEmail,
+            permanent
+                ? operation.copyWith(
+                    status: 'failed',
+                    error:
+                        result['error']?.toString() ??
+                        'Aktion nicht mehr gueltig',
+                  )
+                : PendingSyncQueueService.scheduleRetry(operation),
+          );
           continue;
         }
-        final counter = CounterIncrementResult.fromJson(Map<String, dynamic>.from(result['serverStateDelta'] as Map));
-        await saveConfirmedIncrement(userEmail, ConfirmedCounterIncrement(
-          localOperationId: operation.id, groupId: operation.groupId, amount: _amount(operation),
-          incrementRequestId: counter.incrementRequestId, undoExpiresAt: counter.undoExpiresAt,
-          affectsCurrentUser: true,
-        ));
-        await PendingSyncQueueService.recordCounter(userEmail, operation.groupId, counter.count,
-            acknowledgedIds: [operation.id]);
+        final counter = CounterIncrementResult.fromJson(
+          Map<String, dynamic>.from(result['serverStateDelta'] as Map),
+        );
+        await saveConfirmedIncrement(
+          userEmail,
+          ConfirmedCounterIncrement(
+            localOperationId: operation.id,
+            groupId: operation.groupId,
+            amount: _amount(operation),
+            incrementRequestId: counter.incrementRequestId,
+            undoExpiresAt: counter.undoExpiresAt,
+            affectsCurrentUser: true,
+          ),
+        );
+        acknowledgedByGroup
+            .putIfAbsent(operation.groupId, () => [])
+            .add(operation.id);
+        counts[operation.groupId] = counter.count;
+        if (result['status'] == 'duplicate') {
+          duplicateGroups.add(operation.groupId);
+        }
+      }
+      for (final entry in acknowledgedByGroup.entries) {
+        final count = duplicateGroups.contains(entry.key)
+            ? (await GroupCounterApiService().fetchMyGroupCounter(entry.key))
+                  .count
+            : counts[entry.key]!;
+        await PendingSyncQueueService.recordCounter(
+          userEmail,
+          entry.key,
+          count,
+          acknowledgedIds: entry.value,
+        );
       }
       return successful && expired.isEmpty;
     } on UnauthorizedException {
-      for (final operation in batch) {
-        await PendingSyncQueueService.replaceOperation(userEmail, operation.copyWith(status: 'pending'));
+      final remaining = await PendingSyncQueueService.getOperations(userEmail);
+      for (final operation in batch.where(
+        (operation) => remaining.any(
+          (entry) => entry.id == operation.id && entry.status != 'failed',
+        ),
+      )) {
+        await PendingSyncQueueService.replaceOperation(
+          userEmail,
+          operation.copyWith(status: 'pending'),
+        );
       }
       rethrow;
     } catch (_) {
-      for (final operation in batch) {
-        await PendingSyncQueueService.replaceOperation(userEmail, PendingSyncQueueService.scheduleRetry(operation));
+      final remaining = await PendingSyncQueueService.getOperations(userEmail);
+      for (final operation in batch.where(
+        (operation) => remaining.any(
+          (entry) => entry.id == operation.id && entry.status != 'failed',
+        ),
+      )) {
+        await PendingSyncQueueService.replaceOperation(
+          userEmail,
+          PendingSyncQueueService.scheduleRetry(operation),
+        );
       }
       return false;
     }
@@ -551,12 +676,27 @@ class OfflineStrichService {
     String userEmail,
     int groupId,
   ) async {
-    final snapshot = await PendingSyncQueueService.counterSnapshot(userEmail, groupId);
-    final baseline = snapshot.count ?? await getLastOnlineCounter(userEmail, groupId);
-    return baseline + snapshot.operations.where((operation) => operation.groupId == groupId &&
-      operation.status != 'failed' && (operation.domain == PendingSyncOperation.domainCounter ||
-      (operation.domain == PendingSyncOperation.domainGroupUsers && operation.payload['affectsCurrentUser'] == true)))
-      .fold<int>(0, (sum, operation) => sum + _pendingCountDelta(operation));
+    final snapshot = await PendingSyncQueueService.counterSnapshot(
+      userEmail,
+      groupId,
+    );
+    final baseline =
+        snapshot.count ?? await getLastOnlineCounter(userEmail, groupId);
+    return baseline +
+        snapshot.operations
+            .where(
+              (operation) =>
+                  operation.groupId == groupId &&
+                  operation.status != 'failed' &&
+                  (operation.domain == PendingSyncOperation.domainCounter ||
+                      (operation.domain ==
+                              PendingSyncOperation.domainGroupUsers &&
+                          operation.payload['affectsCurrentUser'] == true)),
+            )
+            .fold<int>(
+              0,
+              (sum, operation) => sum + _pendingCountDelta(operation),
+            );
   }
 
   static Future<int> getEffectiveCounter(String userEmail, int groupId) =>
@@ -648,10 +788,18 @@ class OfflineStrichService {
       groupId: operation.groupId,
     );
     if (confirmed == null) {
-      final original = operations.where((entry) => entry.id == localOperationId).firstOrNull;
+      final original = operations
+          .where((entry) => entry.id == localOperationId)
+          .firstOrNull;
       if (original != null && original.status != 'failed') {
-        await PendingSyncQueueService.replaceOperation(userEmail, PendingSyncQueueService.scheduleRetry(operation));
-        return _UndoSyncResult(await PendingSyncQueueService.getOperations(userEmail), false);
+        await PendingSyncQueueService.replaceOperation(
+          userEmail,
+          PendingSyncQueueService.scheduleRetry(operation),
+        );
+        return _UndoSyncResult(
+          await PendingSyncQueueService.getOperations(userEmail),
+          false,
+        );
       }
       await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
       return _UndoSyncResult(

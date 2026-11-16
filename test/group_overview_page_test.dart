@@ -4,6 +4,18 @@ import 'package:bierliste/services/group_api_service.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+import 'package:bierliste/providers/sync_provider.dart';
+
+class OverviewSyncProvider extends SyncProvider {
+  @override
+  void initialize() {}
+}
+
+Widget withSync(Widget child) => ChangeNotifierProvider<SyncProvider>(
+  create: (_) => OverviewSyncProvider(),
+  child: child,
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -14,8 +26,10 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: GroupOverviewPage(groupApiService: EmptyGroupApiService()),
+      withSync(
+        MaterialApp(
+          home: GroupOverviewPage(groupApiService: EmptyGroupApiService()),
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -35,12 +49,14 @@ void main() {
     SharedPreferences.setMockInitialValues({});
 
     await tester.pumpWidget(
-      MaterialApp(
-        routes: {
-          '/settings': (_) =>
-              const Scaffold(body: Text('Persönliche Einstellungen')),
-        },
-        home: GroupOverviewPage(groupApiService: EmptyGroupApiService()),
+      withSync(
+        MaterialApp(
+          routes: {
+            '/settings': (_) =>
+                const Scaffold(body: Text('Persönliche Einstellungen')),
+          },
+          home: GroupOverviewPage(groupApiService: EmptyGroupApiService()),
+        ),
       ),
     );
     await tester.pumpAndSettle();

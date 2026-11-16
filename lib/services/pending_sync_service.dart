@@ -16,9 +16,10 @@ class PendingSyncService {
   }
 
   static Future<bool> syncPendingOperations(String userEmail) {
-    return _syncs[userEmail] ??= _syncPendingOperations(userEmail).whenComplete(() {
-      _syncs.remove(userEmail);
-    });
+    return _syncs[userEmail] ??= _syncPendingOperations(userEmail)
+        .whenComplete(() {
+          _syncs.remove(userEmail);
+        });
   }
 
   static Future<bool> _syncPendingOperations(String userEmail) async {

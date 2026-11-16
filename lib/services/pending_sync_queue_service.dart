@@ -47,7 +47,10 @@ class PendingSyncQueueService {
       final operations = _readOperationsFromBox(box, userEmail);
       final raw = box.get(_pendingOperationsStorageKey(userEmail));
       final entries = raw is Map ? raw['operations'] : raw;
-      if (entries is List && entries.whereType<Map>().any((entry) => entry['clientEventId'] == null)) {
+      if (entries is List &&
+          entries.whereType<Map>().any(
+            (entry) => entry['clientEventId'] == null,
+          )) {
         await _writeOperationsToBox(box, userEmail, operations);
       }
       return operations;
@@ -93,6 +96,29 @@ class PendingSyncQueueService {
       );
     });
   }
+
+  static Future<bool> removeUnsentCounterIncrement(
+    String userEmail,
+    String operationId,
+  ) => _withMutationLock(userEmail, (box) async {
+    final operations = _readOperationsFromBox(box, userEmail);
+    final operation = operations
+        .where((entry) => entry.id == operationId)
+        .firstOrNull;
+    if (operation == null ||
+        operation.domain != PendingSyncOperation.domainCounter ||
+        operation.operationType != PendingSyncOperation.incrementOwnCounter ||
+        operation.status != 'pending' ||
+        operation.retryCount != 0) {
+      return false;
+    }
+    await _writeOperationsToBox(
+      box,
+      userEmail,
+      operations.where((entry) => entry.id != operationId).toList(),
+    );
+    return true;
+  });
 
   static Future<void> removeGroupOperations(
     String userEmail,
@@ -249,9 +275,13 @@ class PendingSyncQueueService {
     final rawList = (raw is Map ? raw['operations'] : raw) as List? ?? [];
 
     return rawList.whereType<Map>().map((entry) {
-      final operation = PendingSyncOperation.fromJson(Map<String, dynamic>.from(entry));
+      final operation = PendingSyncOperation.fromJson(
+        Map<String, dynamic>.from(entry),
+      );
       return operation.clientEventId == null
-          ? operation.copyWith(clientEventId: PendingSyncOperation.newClientEventId())
+          ? operation.copyWith(
+              clientEventId: PendingSyncOperation.newClientEventId(),
+            )
           : operation;
     }).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
   }
@@ -263,36 +293,58 @@ class PendingSyncQueueService {
   ) async {
     final raw = box.get(_pendingOperationsStorageKey(userEmail));
     _revisions[userEmail] = revision(userEmail) + 1;
-    await box.put(
-      _pendingOperationsStorageKey(userEmail),
-      {
-        'operations': operations.map((operation) => operation.toJson()).toList(),
-        'counters': raw is Map ? raw['counters'] ?? {} : {},
-      },
-    );
+    await box.put(_pendingOperationsStorageKey(userEmail), {
+      'operations': operations.map((operation) => operation.toJson()).toList(),
+      'counters': raw is Map ? raw['counters'] ?? {} : {},
+    });
     _changes.add(userEmail);
   }
 
-  static Future<({int? count, List<PendingSyncOperation> operations})> counterSnapshot(
-    String userEmail, int groupId,
-  ) => _withMutationLock(userEmail, (box) async {
-    final raw = box.get(_pendingOperationsStorageKey(userEmail));
-    final counters = raw is Map ? raw['counters'] : null;
-    return (count: counters is Map ? counters['$groupId'] as int? : null,
-      operations: _readOperationsFromBox(box, userEmail));
-  });
+  static Future<({int? count, List<PendingSyncOperation> operations})>
+  counterSnapshot(String userEmail, int groupId) =>
+      _withMutationLock(userEmail, (box) async {
+        final raw = box.get(_pendingOperationsStorageKey(userEmail));
+        final counters = raw is Map ? raw['counters'] : null;
+        return (
+          count: counters is Map ? counters['$groupId'] as int? : null,
+          operations: _readOperationsFromBox(box, userEmail),
+        );
+      });
 
-  static Future<void> recordCounter(String userEmail, int groupId, int count, {
-    Iterable<String> acknowledgedIds = const [], int? expectedRevision,
+  static Future<void> recordCounter(
+    String userEmail,
+    int groupId,
+    int count, {
+    Iterable<String> acknowledgedIds = const [],
+    int? expectedRevision,
   }) => _withMutationLock(userEmail, (box) async {
-    if (expectedRevision != null && expectedRevision != revision(userEmail)) return;
+    if (expectedRevision != null && expectedRevision != revision(userEmail)) {
+      return;
+    }
+    final currentOperations = _readOperationsFromBox(box, userEmail);
+    if (expectedRevision != null &&
+        currentOperations.any(
+          (operation) =>
+              operation.groupId == groupId &&
+              operation.status != 'failed' &&
+              operation.operationType ==
+                  PendingSyncOperation.incrementOwnCounter &&
+              (operation.status == 'syncing' || operation.retryCount > 0),
+        )) {
+      return;
+    }
     final raw = box.get(_pendingOperationsStorageKey(userEmail));
-    final counters = Map<String, dynamic>.from(raw is Map ? raw['counters'] ?? {} : {});
+    final counters = Map<String, dynamic>.from(
+      raw is Map ? raw['counters'] ?? {} : {},
+    );
     counters['$groupId'] = count;
     final ids = acknowledgedIds.toSet();
-    final operations = _readOperationsFromBox(box, userEmail).where((operation) => !ids.contains(operation.id));
+    final operations = currentOperations.where(
+      (operation) => !ids.contains(operation.id),
+    );
     await box.put(_pendingOperationsStorageKey(userEmail), {
-      'operations': operations.map((operation) => operation.toJson()).toList(), 'counters': counters,
+      'operations': operations.map((operation) => operation.toJson()).toList(),
+      'counters': counters,
     });
     _revisions[userEmail] = revision(userEmail) + 1;
     _changes.add(userEmail);
@@ -318,5 +370,4 @@ class PendingSyncQueueService {
       }
     }
   }
-
 }

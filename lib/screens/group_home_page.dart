@@ -18,6 +18,7 @@ import '../services/offline_group_users_service.dart';
 import '../services/offline_strich_service.dart';
 import '../services/pending_sync_queue_service.dart';
 import '../widgets/toast.dart';
+import '../widgets/sync_status_indicator.dart';
 import '../providers/auth_provider.dart';
 import '../utils/navigation_helper.dart';
 
@@ -781,7 +782,10 @@ class _GroupHomePageState extends State<GroupHomePage>
   }
 
   Widget? _buildPendingSyncAction(SyncProvider syncProvider) {
-    if (!syncProvider.hasPendingSync) {
+    if (syncProvider.hasProblemsForGroup(widget.groupId)) {
+      return SyncStatusIndicator(groupId: widget.groupId);
+    }
+    if (!syncProvider.hasPendingForGroup(widget.groupId)) {
       return null;
     }
 

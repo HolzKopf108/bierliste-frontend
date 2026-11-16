@@ -439,6 +439,13 @@ class OfflineStrichService {
   }
 
   static Future<bool> _uploadBatch(String userEmail, List<PendingSyncOperation> batch) async {
+    final expired = batch.where((operation) => DateTime.now().toUtc().difference(operation.createdAt) >= const Duration(days: 90)).toList();
+    for (final operation in expired) {
+      await PendingSyncQueueService.replaceOperation(userEmail, operation.copyWith(status: 'failed',
+        error: 'Aktion ist zu alt. Bitte den Gruppenstand pruefen.'));
+    }
+    batch = batch.where((operation) => !expired.contains(operation)).toList();
+    if (batch.isEmpty) return false;
     for (final operation in batch) {
       await PendingSyncQueueService.replaceOperation(userEmail, operation.copyWith(status: 'syncing'));
     }
@@ -465,7 +472,7 @@ class OfflineStrichService {
         await PendingSyncQueueService.recordCounter(userEmail, operation.groupId, counter.count,
             acknowledgedIds: [operation.id]);
       }
-      return successful;
+      return successful && expired.isEmpty;
     } on UnauthorizedException {
       for (final operation in batch) {
         await PendingSyncQueueService.replaceOperation(userEmail, operation.copyWith(status: 'pending'));
@@ -511,6 +518,7 @@ class OfflineStrichService {
           if (operation.groupId != groupId) {
             return false;
           }
+          if (operation.status == 'failed') return false;
 
           if (operation.domain == PendingSyncOperation.domainCounter) {
             return targetUserId == null &&
@@ -640,6 +648,11 @@ class OfflineStrichService {
       groupId: operation.groupId,
     );
     if (confirmed == null) {
+      final original = operations.where((entry) => entry.id == localOperationId).firstOrNull;
+      if (original != null && original.status != 'failed') {
+        await PendingSyncQueueService.replaceOperation(userEmail, PendingSyncQueueService.scheduleRetry(operation));
+        return _UndoSyncResult(await PendingSyncQueueService.getOperations(userEmail), false);
+      }
       await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
       return _UndoSyncResult(
         await PendingSyncQueueService.getOperations(userEmail),

@@ -26,6 +26,13 @@ class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
   bool hasPendingForGroup(int groupId) => _operations.any((operation) => operation.groupId == groupId && operation.status != 'failed');
   bool hasProblemsForGroup(int groupId) => problems.any((operation) => operation.groupId == groupId);
 
+  Future<void> dismissProblem(String operationId) async {
+    final userEmail = await TokenService.getUserEmail();
+    if (userEmail == null) return;
+    await PendingSyncQueueService.removeOperations(userEmail, [operationId]);
+    await refreshPendingSyncStatus();
+  }
+
   Timer? _monitorTimer;
   Future<bool> Function()? _syncHandler;
   Future<bool>? _syncInFlight;

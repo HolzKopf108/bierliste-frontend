@@ -27,7 +27,11 @@ class OfflineStrichService {
     int groupId,
     int count, {
     int? targetUserId,
+    int? expectedRevision,
   }) async {
+    if (targetUserId == null) {
+      await PendingSyncQueueService.recordCounter(userEmail, groupId, count, expectedRevision: expectedRevision);
+    }
     final box = await _openBox();
     await box.put(
       _lastOnlineCounterKey(userEmail, groupId, targetUserId),
@@ -453,13 +457,13 @@ class OfflineStrichService {
           continue;
         }
         final counter = CounterIncrementResult.fromJson(Map<String, dynamic>.from(result['serverStateDelta'] as Map));
-        await saveLastOnlineCounter(userEmail, operation.groupId, counter.count);
         await saveConfirmedIncrement(userEmail, ConfirmedCounterIncrement(
           localOperationId: operation.id, groupId: operation.groupId, amount: _amount(operation),
           incrementRequestId: counter.incrementRequestId, undoExpiresAt: counter.undoExpiresAt,
           affectsCurrentUser: true,
         ));
-        await PendingSyncQueueService.removeOperations(userEmail, [operation.id]);
+        await PendingSyncQueueService.recordCounter(userEmail, operation.groupId, counter.count,
+            acknowledgedIds: [operation.id]);
       }
       return successful;
     } on UnauthorizedException {
@@ -539,9 +543,12 @@ class OfflineStrichService {
     String userEmail,
     int groupId,
   ) async {
-    final lastOnlineCount = await getLastOnlineCounter(userEmail, groupId);
-    final pendingCount = await getPendingSum(userEmail, groupId);
-    return lastOnlineCount + pendingCount;
+    final snapshot = await PendingSyncQueueService.counterSnapshot(userEmail, groupId);
+    final baseline = snapshot.count ?? await getLastOnlineCounter(userEmail, groupId);
+    return baseline + snapshot.operations.where((operation) => operation.groupId == groupId &&
+      operation.status != 'failed' && (operation.domain == PendingSyncOperation.domainCounter ||
+      (operation.domain == PendingSyncOperation.domainGroupUsers && operation.payload['affectsCurrentUser'] == true)))
+      .fold<int>(0, (sum, operation) => sum + _pendingCountDelta(operation));
   }
 
   static Future<int> getEffectiveCounter(String userEmail, int groupId) =>

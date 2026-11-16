@@ -16,6 +16,7 @@ import '../services/http_service.dart';
 import '../services/offline_group_settings_service.dart';
 import '../services/offline_group_users_service.dart';
 import '../services/offline_strich_service.dart';
+import '../services/pending_sync_queue_service.dart';
 import '../widgets/toast.dart';
 import '../providers/auth_provider.dart';
 import '../utils/navigation_helper.dart';
@@ -179,22 +180,21 @@ class _GroupHomePageState extends State<GroupHomePage>
         unawaited(syncProvider.requestSync());
       }
 
+      final revision = PendingSyncQueueService.revision(userEmail);
       final counter = await _groupCounterApiService.fetchMyGroupCounter(
-        widget.groupId,
-      );
-      final pendingCount = await OfflineStrichService.getPendingSum(
-        userEmail,
         widget.groupId,
       );
       await OfflineStrichService.saveLastOnlineCounter(
         userEmail,
         widget.groupId,
         counter.count,
+        expectedRevision: revision,
       );
+      final count = await OfflineStrichService.getEffectiveCounter(userEmail, widget.groupId);
       if (!mounted) return;
 
       setState(() {
-        _strichCount = counter.count + pendingCount;
+        _strichCount = count;
         _isLoading = false;
         _loadErrorMessage = null;
       });
@@ -254,18 +254,11 @@ class _GroupHomePageState extends State<GroupHomePage>
     String userEmail, {
     required String fallbackErrorMessage,
   }) async {
-    final lastOnlineCount = await OfflineStrichService.getLastOnlineCounter(
-      userEmail,
-      widget.groupId,
-    );
-    final pendingCount = await OfflineStrichService.getPendingSum(
-      userEmail,
-      widget.groupId,
-    );
+    final count = await OfflineStrichService.getEffectiveCounter(userEmail, widget.groupId);
     if (!mounted) return;
 
     setState(() {
-      _strichCount = lastOnlineCount + pendingCount;
+      _strichCount = count;
       _isLoading = false;
       _loadErrorMessage = null;
     });

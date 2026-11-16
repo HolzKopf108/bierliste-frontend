@@ -1,7 +1,7 @@
 name: bierliste
 description: "Bierlisten App."
 publish_to: 'none'
-version: 1.0.10
+version: 1.0.11
 
 environment:
   sdk: ^3.8.1

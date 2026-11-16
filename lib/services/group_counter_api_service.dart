@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 
 import 'http_service.dart';
 import 'offline_strich_service.dart';
+import '../models/pending_sync_operation.dart';
 
 class GroupCounterApiException implements Exception {
   final String message;
@@ -19,6 +20,38 @@ class GroupCounterApiException implements Exception {
 }
 
 class GroupCounterApiService {
+  static Future<List<Map<String, dynamic>>> Function(List<PendingSyncOperation>)? testSyncEvents;
+
+  Future<List<Map<String, dynamic>>> syncEvents(List<PendingSyncOperation> operations) async {
+    final override = testSyncEvents;
+    if (override != null) return override(operations);
+    final response = await HttpService.authorizedRequest(
+      '${AppConfig.apiBaseUrl}${AppConfig.apiVersion}/sync/events',
+      'POST',
+      body: {'events': operations.map((operation) => operation.toClientEvent()).toList()},
+    ).timeout(const Duration(seconds: 20));
+    _ensureSuccess(response, 'Synchronisierung fehlgeschlagen');
+    final data = _decode(response.body);
+    if (data is! Map || data['results'] is! List) {
+      throw GroupCounterApiException('Ungueltige Sync-Antwort');
+    }
+    final results = (data['results'] as List).map((entry) => Map<String, dynamic>.from(entry as Map)).toList();
+    final expectedIds = operations.map((operation) => operation.clientEventId).toSet();
+    final ids = results.map((result) => result['clientEventId']).toSet();
+    if (results.length != operations.length || ids.length != results.length ||
+        !ids.containsAll(expectedIds)) {
+      throw GroupCounterApiException('Unvollstaendige Sync-Antwort');
+    }
+    for (final result in results) {
+      if (!const ['applied', 'duplicate', 'failed'].contains(result['status'])) {
+        throw GroupCounterApiException('Unbekannter Sync-Status');
+      }
+      if (result['status'] != 'failed') {
+        CounterIncrementResult.fromJson(Map<String, dynamic>.from(result['serverStateDelta'] as Map));
+      }
+    }
+    return results;
+  }
   static Future<GroupCounter> Function(int groupId)? testFetchMyGroupCounter;
   static Future<CounterIncrementResult> Function(int groupId, int amount)?
   testIncrementMyGroupCounter;

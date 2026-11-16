@@ -1,3 +1,5 @@
+import 'dart:math';
+
 class PendingSyncOperation {
   static const String domainCounter = 'counter';
   static const String domainGroupUsers = 'groupUsers';
@@ -24,6 +26,9 @@ class PendingSyncOperation {
   final DateTime createdAt;
   final int retryCount;
   final DateTime? nextAttemptAt;
+  final String? clientEventId;
+  final String status;
+  final String? error;
 
   const PendingSyncOperation({
     required this.id,
@@ -35,9 +40,13 @@ class PendingSyncOperation {
     required this.createdAt,
     this.retryCount = 0,
     this.nextAttemptAt,
+    this.clientEventId,
+    this.status = 'pending',
+    this.error,
   });
 
   bool get isReadyForSync {
+    if (status == 'failed') return false;
     final nextAttemptAt = this.nextAttemptAt;
     if (nextAttemptAt == null) {
       return true;
@@ -57,6 +66,9 @@ class PendingSyncOperation {
     int? retryCount,
     DateTime? nextAttemptAt,
     bool clearNextAttemptAt = false,
+    String? clientEventId,
+    String? status,
+    String? error,
   }) {
     return PendingSyncOperation(
       id: id ?? this.id,
@@ -70,6 +82,9 @@ class PendingSyncOperation {
       nextAttemptAt: clearNextAttemptAt
           ? null
           : (nextAttemptAt ?? this.nextAttemptAt),
+      clientEventId: clientEventId ?? this.clientEventId,
+      status: status ?? this.status,
+      error: error ?? this.error,
     );
   }
 
@@ -92,6 +107,9 @@ class PendingSyncOperation {
       nextAttemptAt: json['nextAttemptAt'] != null
           ? DateTime.tryParse(json['nextAttemptAt'].toString())?.toUtc()
           : null,
+      clientEventId: json['clientEventId'] as String?,
+      status: json['status'] as String? ?? 'pending',
+      error: json['error'] as String?,
     );
   }
 
@@ -105,6 +123,9 @@ class PendingSyncOperation {
       'payload': payload,
       'createdAt': createdAt.toUtc().toIso8601String(),
       'retryCount': retryCount,
+      'clientEventId': clientEventId,
+      'status': status,
+      if (error != null) 'error': error,
       if (nextAttemptAt != null)
         'nextAttemptAt': nextAttemptAt!.toUtc().toIso8601String(),
     };
@@ -120,5 +141,14 @@ class PendingSyncOperation {
     }
 
     return int.tryParse(value.toString()) ?? 0;
+  }
+
+  static String newClientEventId() {
+    final random = Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 15) | 64;
+    bytes[8] = (bytes[8] & 63) | 128;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 }

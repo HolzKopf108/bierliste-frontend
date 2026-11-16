@@ -39,8 +39,11 @@ class PendingSyncQueueService {
   static Future<List<PendingSyncOperation>> getOperations(
     String userEmail,
   ) async {
-    final box = await _openBox();
-    return _readOperationsFromBox(box, userEmail);
+    return _withMutationLock(userEmail, (box) async {
+      final operations = _readOperationsFromBox(box, userEmail);
+      await _writeOperationsToBox(box, userEmail, operations);
+      return operations;
+    });
   }
 
   static Future<void> saveOperations(
@@ -107,7 +110,7 @@ class PendingSyncQueueService {
 
   static Future<bool> hasPendingOperations(String userEmail) async {
     final operations = await getOperations(userEmail);
-    return operations.isNotEmpty;
+    return operations.any((operation) => operation.status != 'failed');
   }
 
   static Future<void> clearOperations(String userEmail) async {
@@ -173,8 +176,10 @@ class PendingSyncQueueService {
     required int groupId,
     Map<String, dynamic> payload = const <String, dynamic>{},
   }) {
+    final clientEventId = PendingSyncOperation.newClientEventId();
     return PendingSyncOperation(
-      id: _createOperationId(userEmail, domain, groupId),
+      id: clientEventId,
+      clientEventId: clientEventId,
       userEmail: userEmail,
       domain: domain,
       operationType: operationType,
@@ -191,6 +196,7 @@ class PendingSyncQueueService {
 
     return operation.copyWith(
       retryCount: nextRetryCount,
+      status: 'pending',
       nextAttemptAt: DateTime.now().toUtc().add(delay),
     );
   }
@@ -234,7 +240,10 @@ class PendingSyncQueueService {
         (box.get(_pendingOperationsStorageKey(userEmail)) as List?) ?? [];
 
     return rawList.whereType<Map>().map((entry) {
-      return PendingSyncOperation.fromJson(Map<String, dynamic>.from(entry));
+      final operation = PendingSyncOperation.fromJson(Map<String, dynamic>.from(entry));
+      return operation.clientEventId == null
+          ? operation.copyWith(clientEventId: PendingSyncOperation.newClientEventId())
+          : operation;
     }).toList()..sort((a, b) => a.createdAt.compareTo(b.createdAt));
   }
 
@@ -270,11 +279,4 @@ class PendingSyncQueueService {
     }
   }
 
-  static String _createOperationId(
-    String userEmail,
-    String domain,
-    int groupId,
-  ) {
-    return '${DateTime.now().microsecondsSinceEpoch}_${userEmail}_${domain}_$groupId';
-  }
 }

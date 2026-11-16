@@ -6,6 +6,8 @@ import '../services/connectivity_service.dart';
 import '../services/pending_sync_service.dart';
 import '../services/sync_debug_service.dart';
 import '../services/token_service.dart';
+import '../services/pending_sync_queue_service.dart';
+import '../models/pending_sync_operation.dart';
 
 class SyncProvider with ChangeNotifier {
   static const _monitorInterval = Duration(seconds: 10);
@@ -13,6 +15,13 @@ class SyncProvider with ChangeNotifier {
   bool _actualOnline = false;
   bool _isSyncing = false;
   bool _hasPendingSync = false;
+  List<PendingSyncOperation> _operations = [];
+  StreamSubscription<String>? _queueSubscription;
+  bool _disposed = false;
+  int _statusRead = 0;
+  List<PendingSyncOperation> get problems => List.unmodifiable(_operations.where((operation) => operation.status == 'failed'));
+  bool hasPendingForGroup(int groupId) => _operations.any((operation) => operation.groupId == groupId && operation.status != 'failed');
+  bool hasProblemsForGroup(int groupId) => problems.any((operation) => operation.groupId == groupId);
 
   Timer? _monitorTimer;
   Future<bool> Function()? _syncHandler;
@@ -31,6 +40,10 @@ class SyncProvider with ChangeNotifier {
     _actualOnline = false;
     _isSyncing = false;
     _hasPendingSync = false;
+    _operations = [];
+    _queueSubscription ??= PendingSyncQueueService.changes.listen((_) {
+      unawaited(refreshPendingSyncStatus());
+    });
     notifyListeners();
     startMonitoring();
     unawaited(refreshPendingSyncStatus());
@@ -47,11 +60,13 @@ class SyncProvider with ChangeNotifier {
   }
 
   Future<void> refreshPendingSyncStatus() async {
+    final read = ++_statusRead;
     final userEmail = await TokenService.getUserEmail();
-    final hasPending =
-        userEmail != null &&
-        await PendingSyncService.hasPendingOperations(userEmail);
-    _setHasPendingSync(hasPending);
+    final operations = userEmail == null ? <PendingSyncOperation>[] : await PendingSyncQueueService.getOperations(userEmail);
+    if (_disposed || read != _statusRead) return;
+    _operations = operations;
+    _hasPendingSync = operations.any((operation) => operation.status != 'failed');
+    notifyListeners();
   }
 
   Future<bool> requestSync({bool refreshPendingStatus = true}) async {
@@ -236,6 +251,8 @@ class SyncProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
+    _queueSubscription?.cancel();
     stopMonitoring();
     super.dispose();
   }

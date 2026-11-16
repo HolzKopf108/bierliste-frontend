@@ -9,6 +9,8 @@ class PendingSyncQueueService {
   static const _pendingOperationsKey = 'pending_sync_operations';
   static final Map<String, Future<void>> _mutationTails = {};
   static final Map<String, int> _revisions = {};
+  static final _changes = StreamController<String>.broadcast(sync: true);
+  static Stream<String> get changes => _changes.stream;
   static int revision(String userEmail) => _revisions[userEmail] ?? 0;
 
   static Future<Box> _openBox() async {
@@ -122,6 +124,7 @@ class PendingSyncQueueService {
   static Future<void> clearOperations(String userEmail) async {
     await _withMutationLock(userEmail, (box) async {
       await box.delete(_pendingOperationsStorageKey(userEmail));
+      _changes.add(userEmail);
       SyncDebugService.log(
         'PendingSyncQueue',
         'queue cleared',
@@ -257,16 +260,17 @@ class PendingSyncQueueService {
     Box box,
     String userEmail,
     List<PendingSyncOperation> operations,
-  ) {
+  ) async {
     final raw = box.get(_pendingOperationsStorageKey(userEmail));
     _revisions[userEmail] = revision(userEmail) + 1;
-    return box.put(
+    await box.put(
       _pendingOperationsStorageKey(userEmail),
       {
         'operations': operations.map((operation) => operation.toJson()).toList(),
         'counters': raw is Map ? raw['counters'] ?? {} : {},
       },
     );
+    _changes.add(userEmail);
   }
 
   static Future<({int? count, List<PendingSyncOperation> operations})> counterSnapshot(
@@ -291,6 +295,7 @@ class PendingSyncQueueService {
       'operations': operations.map((operation) => operation.toJson()).toList(), 'counters': counters,
     });
     _revisions[userEmail] = revision(userEmail) + 1;
+    _changes.add(userEmail);
   });
 
   static Future<T> _withMutationLock<T>(

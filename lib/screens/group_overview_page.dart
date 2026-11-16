@@ -6,6 +6,7 @@ import 'package:animated_list_plus/animated_list_plus.dart';
 import 'package:animated_list_plus/transitions.dart';
 
 import '../models/group.dart';
+import '../widgets/sync_status_indicator.dart';
 import '../routes/app_routes.dart';
 import '../services/group_api_service.dart';
 import '../services/http_service.dart';
@@ -239,6 +240,7 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
               )
             : null,
         actions: [
+          const SyncStatusIndicator(),
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.pushNamed(context, '/settings'),
@@ -303,7 +305,9 @@ class _GroupOverviewPageState extends State<GroupOverviewPage> {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: ListTile(
-                        leading: const Icon(Icons.group),
+                        leading: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.group), SyncStatusIndicator(groupId: group.id),
+                        ]),
                         title: Text(group.name),
                         trailing: AnimatedSwitcher(
                           duration: const Duration(milliseconds: 300),

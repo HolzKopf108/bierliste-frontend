@@ -16,6 +16,10 @@ subprojects {
     val newSubprojectBuildDir = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 
+    afterEvaluate {
+        extensions.findByType<BaseExtension>()?.ndkVersion = "30.0.15729638"
+    }
+
     // Setze Java 17 Kompatibilität nur via compileOptions
     plugins.withId("com.android.application") {
         extensions.configure<BaseExtension>("android") {

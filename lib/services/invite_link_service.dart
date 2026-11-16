@@ -14,7 +14,7 @@ import 'package:bierliste/services/offline_group_users_service.dart';
 import 'package:bierliste/utils/invite_link_parser.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:bierliste/widgets/toast.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -40,10 +40,9 @@ class InviteLinkService {
   InviteLinkService({
     AppLinks? appLinks,
     GroupApiService? groupApiService,
-    SharedPreferences? sharedPreferences,
+    this._sharedPreferences,
   }) : _appLinks = appLinks ?? AppLinks(),
-       _groupApiService = groupApiService ?? GroupApiService(),
-       _sharedPreferences = sharedPreferences;
+       _groupApiService = groupApiService ?? GroupApiService();
 
   bool get hasPendingInvite =>
       _pendingInviteToken != null && _pendingInviteToken!.trim().isNotEmpty;

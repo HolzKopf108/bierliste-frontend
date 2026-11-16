@@ -1,6 +1,6 @@
 import 'package:bierliste/services/user_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class ResetPasswordPage extends StatefulWidget {
   final String email;

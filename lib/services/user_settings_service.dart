@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:bierliste/services/user_settings_api_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:hive/hive.dart';
 import '../models/user_settings.dart';
 

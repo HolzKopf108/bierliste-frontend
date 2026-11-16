@@ -1,0 +1,11 @@
+targets:
+  $default:
+    builders:
+      hive_generator:hive_generator:
+        generate_for:
+          - lib/models/user.dart
+          - lib/models/user_settings.dart
+      source_gen:combining_builder:
+        generate_for:
+          - lib/models/user.dart
+          - lib/models/user_settings.dart

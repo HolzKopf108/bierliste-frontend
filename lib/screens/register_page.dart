@@ -1,6 +1,6 @@
 import 'package:bierliste/services/auth_api_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});

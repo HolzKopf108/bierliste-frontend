@@ -7,7 +7,7 @@ import 'package:bierliste/services/group_api_service.dart';
 import 'package:bierliste/utils/invite_link_builder.dart';
 import 'package:bierliste/widgets/group_invite_section.dart';
 import 'package:bierliste/widgets/toast.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 

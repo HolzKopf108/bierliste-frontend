@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
@@ -919,7 +919,7 @@ class _GroupHomePageState extends State<GroupHomePage>
           },
         ),
         actions: [
-          if (pendingSyncAction != null) pendingSyncAction,
+          ?pendingSyncAction,
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () => Navigator.pushNamed(context, '/settings'),

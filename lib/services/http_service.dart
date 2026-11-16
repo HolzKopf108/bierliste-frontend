@@ -164,7 +164,7 @@ class HttpService {
       if (response.statusCode == 401 && retryOnUnauthorized) {
         final refreshResult = await refreshTokens();
         if (refreshResult.isSuccess) {
-          return authorizedRequest(
+          return await authorizedRequest(
             url,
             method,
             headers: headers,

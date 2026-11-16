@@ -1,5 +1,6 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
+
 import '../providers/theme_provider.dart';
 
 class SettingsThemePage extends StatelessWidget {
@@ -17,32 +18,32 @@ class SettingsThemePage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Theme ändern')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const SizedBox(height: 30),
-          RadioListTile<ThemeMode>(
-            title: const Text('System'),
-            value: ThemeMode.system,
-            groupValue: currentMode,
-            onChanged: (mode) => updateTheme(context, mode!),
-          ),
-          const SizedBox(height: 30),
-          RadioListTile<ThemeMode>(
-            title: const Text('Hell'),
-            value: ThemeMode.light,
-            groupValue: currentMode,
-            onChanged: (mode) => updateTheme(context, mode!),
-          ),
-          const SizedBox(height: 30),
-          RadioListTile<ThemeMode>(
-            title: const Text('Dunkel'),
-            value: ThemeMode.dark,
-            groupValue: currentMode,
-            onChanged: (mode) => updateTheme(context, mode!),
-          ),
-          const SizedBox(height: 75),
-        ],
+      body: RadioGroup<ThemeMode>(
+        groupValue: currentMode,
+        onChanged: (mode) {
+          if (mode != null) updateTheme(context, mode);
+        },
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            const SizedBox(height: 30),
+            RadioListTile<ThemeMode>(
+              title: const Text('System'),
+              value: ThemeMode.system,
+            ),
+            const SizedBox(height: 30),
+            RadioListTile<ThemeMode>(
+              title: const Text('Hell'),
+              value: ThemeMode.light,
+            ),
+            const SizedBox(height: 30),
+            RadioListTile<ThemeMode>(
+              title: const Text('Dunkel'),
+              value: ThemeMode.dark,
+            ),
+            const SizedBox(height: 75),
+          ],
+        ),
       ),
     );
   }

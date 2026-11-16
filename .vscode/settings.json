@@ -1,5 +1,6 @@
 {
     "java.configuration.updateBuildConfiguration": "automatic",
     "cmake.ignoreCMakeListsMissing": true,
-    "python.terminal.useEnvFile": true
+    "python.terminal.useEnvFile": true,
+    "dart.flutterSdkPath": "C:/Users/linus/Flutter/flutter-stable-current"
 }

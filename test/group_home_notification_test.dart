@@ -10,7 +10,7 @@ import 'package:bierliste/services/android_notification_service.dart';
 import 'package:bierliste/services/connectivity_service.dart';
 import 'package:bierliste/services/group_counter_api_service.dart';
 import 'package:bierliste/services/group_notification_api_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';

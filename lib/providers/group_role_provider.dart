@@ -1,7 +1,7 @@
 import 'package:bierliste/models/group_member.dart';
 import 'package:bierliste/services/connectivity_service.dart';
 import 'package:bierliste/services/group_role_cache_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 class GroupRoleProvider with ChangeNotifier {
   final Map<int, GroupMemberRole> _rolesByGroupId = {};

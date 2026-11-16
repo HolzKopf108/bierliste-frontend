@@ -1,7 +1,7 @@
 import 'package:bierliste/models/group.dart';
 import 'package:bierliste/screens/group_overview_page.dart';
 import 'package:bierliste/services/group_api_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

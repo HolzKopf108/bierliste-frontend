@@ -1,6 +1,6 @@
 import 'package:bierliste/models/user.dart';
 import 'package:bierliste/services/user_api_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:hive/hive.dart';
 
 class UserService {

@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:ui' as ui;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -2274,8 +2274,7 @@ class _GroupUsersPageState extends State<GroupUsersPage> {
                                           ),
                                         ],
                                       ),
-                                      if (notificationSection != null)
-                                        notificationSection,
+                                      ?notificationSection,
                                     ],
                                   ),
                                 ),

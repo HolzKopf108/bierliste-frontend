@@ -1,5 +1,5 @@
 import 'package:bierliste/utils/navigation_helper.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:bierliste/services/auth_api_service.dart';
 import 'package:provider/provider.dart';

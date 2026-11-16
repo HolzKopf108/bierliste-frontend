@@ -1,5 +1,13 @@
 import 'package:bierliste/utils/navigation_helper.dart';
-import 'package:flutter/material.dart';
+
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
+import '../widgets/google_login_button.dart'
+    if (dart.library.js_interop) '../widgets/google_login_button_web.dart';
+
+import 'package:material_ui/material_ui.dart';
 import 'package:bierliste/services/auth_api_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
@@ -25,6 +33,39 @@ class _LoginPageState extends State<LoginPage> {
   bool _initialErrorShown = false;
 
   final _apiService = AuthApiService();
+  static Future<void>? _googleInitialization;
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _googleSubscription;
+
+  Future<void> _initializeGoogle() =>
+      _googleInitialization ??= GoogleSignIn.instance.initialize(
+        clientId: kIsWeb ? dotenv.env['GOOGLE_WEB_CLIENT_ID'] : null,
+        serverClientId: dotenv.env['GOOGLE_WEB_CLIENT_ID'],
+      );
+
+  @override
+  void initState() {
+    super.initState();
+    if (kIsWeb) {
+      _googleSubscription = GoogleSignIn.instance.authenticationEvents.listen(
+        (event) {
+          if (event is GoogleSignInAuthenticationEventSignIn) {
+            unawaited(_loginGoogle(event.user));
+          }
+        },
+        onError: (Object error) {
+          if (mounted) _showError('Google Login nicht möglich: $error');
+        },
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_googleSubscription?.cancel());
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   void didChangeDependencies() {
@@ -88,22 +129,16 @@ class _LoginPageState extends State<LoginPage> {
     safePushNamed(context, '/register');
   }
 
-  void _loginGoogle() async {
+  Future<void> _loginGoogle([GoogleSignInAccount? account]) async {
+    if (_isLoading) return;
     setState(() => _isLoading = true);
 
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn(
-        scopes: ['email'],
-        serverClientId: dotenv.env['GOOGLE_WEB_CLIENT_ID'],
-      );
+      final googleSignIn = GoogleSignIn.instance;
+      await _initializeGoogle();
 
-      final googleUser = await googleSignIn.signIn();
-      final googleAuth = await googleUser?.authentication;
-      final idToken = googleAuth?.idToken;
-
-      debugPrint('Google user: $googleUser');
-      debugPrint('Google auth: $googleAuth');
-      debugPrint('ID Token: $idToken');
+      final googleUser = account ?? await googleSignIn.authenticate();
+      final idToken = googleUser.authentication.idToken;
 
       if (idToken == null) {
         _showError('Google Login fehlgeschlagen');
@@ -123,7 +158,7 @@ class _LoginPageState extends State<LoginPage> {
         _showError(error);
       }
     } catch (e) {
-      _showError('Google Login nicht möglich: $e');
+      if (mounted) _showError('Google Login nicht möglich: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -238,13 +273,25 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        _loginGoogle();
-                      },
-                      icon: const Icon(Icons.login),
-                      label: const Text('Mit Google anmelden'),
-                    ),
+                    child: kIsWeb
+                        ? FutureBuilder<void>(
+                            future: _initializeGoogle(),
+                            builder: (context, snapshot) {
+                              if (snapshot.hasError) {
+                                return const Text(
+                                  'Google Login nicht verfügbar',
+                                );
+                              }
+                              if (snapshot.connectionState !=
+                                  ConnectionState.done) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+                              return googleLoginButton(() {});
+                            },
+                          )
+                        : googleLoginButton(() => unawaited(_loginGoogle())),
                   ),
                   const SizedBox(height: 8),
                   SizedBox(

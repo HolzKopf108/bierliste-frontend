@@ -7,7 +7,7 @@ import 'package:bierliste/services/android_notification_service.dart';
 import 'package:bierliste/services/user_service.dart';
 import 'package:bierliste/services/user_settings_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../services/token_service.dart';
 import '../services/connectivity_service.dart';

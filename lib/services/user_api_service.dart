@@ -3,7 +3,7 @@ import 'package:bierliste/config/app_config.dart';
 import 'package:bierliste/models/refresh_token_request.dart';
 import 'package:bierliste/services/http_service.dart';
 import 'package:bierliste/services/token_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 enum DeleteAccountFailureType { unauthorized, network, requestFailed }
 

@@ -10,7 +10,7 @@ import 'package:bierliste/screens/group_users_page.dart';
 import 'package:bierliste/services/connectivity_service.dart';
 import 'package:bierliste/services/group_api_service.dart';
 import 'package:bierliste/services/offline_group_users_service.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hive/hive.dart';
 import 'package:provider/provider.dart';

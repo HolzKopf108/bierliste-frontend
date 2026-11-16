@@ -1,6 +1,6 @@
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:bierliste/widgets/toast.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:animated_list_plus/animated_list_plus.dart';
 import 'package:animated_list_plus/transitions.dart';

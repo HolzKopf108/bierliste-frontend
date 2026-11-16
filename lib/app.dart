@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:bierliste/providers/user_provider.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import 'providers/group_role_provider.dart';
 import 'providers/sync_provider.dart';

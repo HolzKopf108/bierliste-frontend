@@ -1,6 +1,6 @@
 import 'package:bierliste/main.dart';
 import 'package:bierliste/providers/auth_provider.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:bierliste/models/user.dart';
 import 'package:bierliste/services/user_service.dart';
 import 'package:provider/provider.dart';

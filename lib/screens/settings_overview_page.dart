@@ -4,7 +4,7 @@ import 'package:bierliste/services/user_api_service.dart';
 import 'package:bierliste/services/user_settings_api_service.dart';
 import 'package:bierliste/utils/navigation_helper.dart';
 import 'package:bierliste/widgets/toast.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 

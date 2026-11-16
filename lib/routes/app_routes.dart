@@ -1,7 +1,7 @@
 import 'package:bierliste/screens/group_overview_page.dart';
 import 'package:bierliste/screens/password_verify_page.dart';
 import 'package:bierliste/screens/reset_password_page.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../screens/loading_page.dart';
 import '../screens/login_page.dart';
 import '../screens/settings_theme_page.dart';
@@ -32,7 +32,7 @@ class AppRoutes {
       'groupId': groupId,
       if (groupName != null && groupName.trim().isNotEmpty)
         'groupName': groupName,
-      if (sanitizedExtra != null) ...sanitizedExtra,
+      ...?sanitizedExtra,
     };
   }
 
@@ -118,8 +118,8 @@ class AppRoutes {
 
   static Route _slide(Widget page) {
     return PageRouteBuilder(
-      pageBuilder: (_, __, ___) => page,
-      transitionsBuilder: (_, animation, __, child) {
+      pageBuilder: (_, _, _) => page,
+      transitionsBuilder: (_, animation, _, child) {
         const begin = Offset(1.0, 0.0);
         const end = Offset.zero;
         const curve = Curves.ease;

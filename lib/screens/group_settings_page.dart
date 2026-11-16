@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:bierliste/models/group_member.dart';
 import 'package:bierliste/models/group.dart';
 import 'package:bierliste/models/group_settings.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';

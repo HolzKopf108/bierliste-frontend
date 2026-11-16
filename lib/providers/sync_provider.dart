@@ -9,8 +9,11 @@ import '../services/token_service.dart';
 import '../services/pending_sync_queue_service.dart';
 import '../models/pending_sync_operation.dart';
 
-class SyncProvider with ChangeNotifier {
-  static const _monitorInterval = Duration(seconds: 10);
+class SyncProvider with ChangeNotifier, WidgetsBindingObserver {
+  static const _monitorInterval = Duration(minutes: 1);
+  StreamSubscription<void>? _connectivitySubscription;
+  bool _foreground = true;
+  Future<void>? _monitorInFlight;
 
   bool _actualOnline = false;
   bool _isSyncing = false;
@@ -33,6 +36,10 @@ class SyncProvider with ChangeNotifier {
   bool get hasPendingSync => _hasPendingSync;
 
   SyncProvider() {
+    WidgetsBinding.instance.addObserver(this);
+    _connectivitySubscription = ConnectivityService.changes.listen((_) {
+      if (!_disposed && _foreground) unawaited(requestSync());
+    });
     initialize();
   }
 
@@ -70,11 +77,14 @@ class SyncProvider with ChangeNotifier {
   }
 
   Future<bool> requestSync({bool refreshPendingStatus = true}) async {
+    if (_disposed || !_foreground) return false;
     if (refreshPendingStatus) {
       await refreshPendingSyncStatus();
     }
 
+    if (!_hasPendingSync) return true;
     await forceCheck();
+    if (_disposed) return false;
 
     final userEmail = await TokenService.getUserEmail();
     final hasReadyOperations =
@@ -113,6 +123,7 @@ class SyncProvider with ChangeNotifier {
   }
 
   void startMonitoring() {
+    if (_disposed || !_foreground) return;
     _monitorTimer?.cancel();
     _monitorTimer = Timer.periodic(_monitorInterval, (_) {
       unawaited(_runMonitorCycle());
@@ -129,8 +140,12 @@ class SyncProvider with ChangeNotifier {
     await _checkOnlineStatus();
   }
 
-  Future<void> _runMonitorCycle() async {
+  Future<void> _runMonitorCycle() => _monitorInFlight ??=
+      _monitorCycle().whenComplete(() { _monitorInFlight = null; });
+
+  Future<void> _monitorCycle() async {
     await refreshPendingSyncStatus();
+    if (_disposed || !_foreground || !_hasPendingSync) return;
     await _checkOnlineStatus();
 
     if (_hasPendingSync && _actualOnline) {
@@ -161,6 +176,7 @@ class SyncProvider with ChangeNotifier {
   }
 
   Future<bool> _performSync() async {
+    if (_disposed) return false;
     if (_syncInFlight != null) {
       SyncDebugService.log('SyncProvider', 'reusing in-flight sync future');
       return _syncInFlight!;
@@ -199,9 +215,6 @@ class SyncProvider with ChangeNotifier {
           'actualOnline': _actualOnline,
         },
       );
-      if (success && _hasPendingSync && _actualOnline) {
-        unawaited(requestSync(refreshPendingStatus: false));
-      }
       completer.complete(success);
       return success;
     } catch (_) {
@@ -223,6 +236,7 @@ class SyncProvider with ChangeNotifier {
   }
 
   void _setActualOnline(bool value) {
+    if (_disposed) return;
     if (_actualOnline == value) {
       return;
     }
@@ -232,6 +246,7 @@ class SyncProvider with ChangeNotifier {
   }
 
   void _setHasPendingSync(bool value) {
+    if (_disposed) return;
     if (_hasPendingSync == value) {
       return;
     }
@@ -241,6 +256,7 @@ class SyncProvider with ChangeNotifier {
   }
 
   void _setIsSyncing(bool value) {
+    if (_disposed) return;
     if (_isSyncing == value) {
       return;
     }
@@ -250,9 +266,22 @@ class SyncProvider with ChangeNotifier {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _foreground = true;
+      startMonitoring();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden || state == AppLifecycleState.detached) {
+      _foreground = false;
+      stopMonitoring();
+    }
+  }
+
+  @override
   void dispose() {
     _disposed = true;
     _queueSubscription?.cancel();
+    _connectivitySubscription?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     stopMonitoring();
     super.dispose();
   }

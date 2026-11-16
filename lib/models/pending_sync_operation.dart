@@ -55,6 +55,19 @@ class PendingSyncOperation {
     return !nextAttemptAt.isAfter(DateTime.now().toUtc());
   }
 
+  Map<String, dynamic> toClientEvent() {
+    if (operationType != incrementOwnCounter || clientEventId == null) {
+      throw StateError('Operation wird von der Sync-API nicht unterstuetzt');
+    }
+    return {
+      'clientEventId': clientEventId,
+      'type': 'INCREMENT_SELF',
+      'groupId': groupId,
+      'payload': payload,
+      'clientTimestamp': createdAt.toUtc().toIso8601String(),
+    };
+  }
+
   PendingSyncOperation copyWith({
     String? id,
     String? userEmail,

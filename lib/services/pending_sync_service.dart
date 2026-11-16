@@ -5,6 +5,7 @@ import 'package:bierliste/services/pending_sync_queue_service.dart';
 import 'package:bierliste/services/sync_debug_service.dart';
 
 class PendingSyncService {
+  static final Map<String, Future<bool>> _syncs = {};
   static Future<bool> hasPendingOperations(String userEmail) {
     return PendingSyncQueueService.hasPendingOperations(userEmail);
   }
@@ -14,7 +15,13 @@ class PendingSyncService {
     return operations.any((operation) => operation.isReadyForSync);
   }
 
-  static Future<bool> syncPendingOperations(String userEmail) async {
+  static Future<bool> syncPendingOperations(String userEmail) {
+    return _syncs[userEmail] ??= _syncPendingOperations(userEmail).whenComplete(() {
+      _syncs.remove(userEmail);
+    });
+  }
+
+  static Future<bool> _syncPendingOperations(String userEmail) async {
     final operationsBefore = await PendingSyncQueueService.getOperations(
       userEmail,
     );
@@ -27,11 +34,11 @@ class PendingSyncService {
       },
     );
 
-    final results = await Future.wait<bool>([
-      OfflineStrichService.syncPendingOperations(userEmail),
-      OfflineGroupSettingsService.syncPendingOperations(userEmail),
-      OfflineGroupUsersService.syncPendingOperations(userEmail),
-    ]);
+    final results = [
+      await OfflineStrichService.syncPendingOperations(userEmail),
+      await OfflineGroupSettingsService.syncPendingOperations(userEmail),
+      await OfflineGroupUsersService.syncPendingOperations(userEmail),
+    ];
 
     final success = results.every((result) => result);
     final operationsAfter = await PendingSyncQueueService.getOperations(

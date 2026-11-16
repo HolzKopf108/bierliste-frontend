@@ -167,6 +167,7 @@ class OfflineStrichService {
     int groupId,
     int amount,
   ) async {
+    if (amount < 1) throw ArgumentError.value(amount, 'amount');
     final operation = PendingSyncQueueService.createOperation(
       userEmail: userEmail,
       domain: PendingSyncOperation.domainCounter,
@@ -299,7 +300,8 @@ class OfflineStrichService {
               operation.groupId == groupId;
         }, orElse: () => null);
 
-    if (originalOperation != null && !isSyncing) {
+    if (originalOperation != null && !isSyncing &&
+        originalOperation.status == 'pending' && originalOperation.retryCount == 0) {
       await PendingSyncQueueService.removeOperations(userEmail, [
         originalOperation.id,
       ]);
@@ -542,6 +544,9 @@ class OfflineStrichService {
     return lastOnlineCount + pendingCount;
   }
 
+  static Future<int> getEffectiveCounter(String userEmail, int groupId) =>
+      _effectiveOwnCounterCount(userEmail, groupId);
+
   static Future<List<PendingSyncOperation>> _removeLocallyUndoneOwnIncrements(
     String userEmail,
     List<PendingSyncOperation> operations, {
@@ -579,6 +584,7 @@ class OfflineStrichService {
           operation.operationType != PendingSyncOperation.incrementOwnCounter) {
         continue;
       }
+      if (operation.status == 'syncing' || operation.retryCount > 0) continue;
       if (groupId != null && operation.groupId != groupId) {
         continue;
       }

@@ -287,10 +287,11 @@ class _GroupHomePageState extends State<GroupHomePage>
       widget.groupId,
       amount,
     );
+    final count = await OfflineStrichService.getEffectiveCounter(userEmail, widget.groupId);
     if (!mounted) return _StrichSubmitResult.failed;
 
     setState(() {
-      _strichCount += amount;
+      _strichCount = count;
       _loadErrorMessage = null;
     });
     _showSavedToast(amount, operation.id);
